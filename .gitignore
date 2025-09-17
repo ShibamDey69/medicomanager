@@ -1,0 +1,87 @@
+# Top-level node_modules (only if not hoisted)
+node_modules/
+
+# Package-level node_modules
+**/node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build output
+dist/
+build/
+**/dist/
+**/build/
+coverage/
+**/coverage/
+
+# Compiled source
+*.tsbuildinfo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# TypeScript cache
+**/.tscache/
+**/.turbo/
+
+# ESLint / Prettier
+.eslintcache
+.prettier-cache/
+
+# Jest
+jest.config.js
+jest.config.ts
+**/jest-coverage/
+
+# Yarn Plug'n'Play
+.pnp*
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Storybook
+.storybook-out/
+
+# TurboRepo cache
+turbo/
+**/turbo/
+
+# PM2 logs
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Optional npm cache directory
+.npm/
+
+# Optional eslint cache
+.eslintcache
+
+# VS Code settings (optional, but often personal)
+.vscode/
+
+# Mac system files
+.DS_Store
