@@ -1,25 +1,48 @@
 // src/tests/api.test.js
 const axios = require("axios");
+const FormData = require("form-data");
 
-const BASE_URL = "http://localhost:5000/api"; // adjust port if needed
+const BASE_URL = "http://localhost:5000/api";
 
 let testUserId = "testUserId123";
 let prescriptionId;
 let medicineId;
-let authCookie; // store login cookie
+let authCookie;
+let ocrJobId;
+
+const testImagePath =
+  "https://i.pinimg.com/736x/d5/ef/9a/d5ef9a9629dc57e5b75266931235d9a7.jpg";
+
+let testImageBuffer;
+
+beforeAll(async () => {
+  try {
+    const res = await axios.get(testImagePath, { responseType: "arraybuffer" });
+    console.log("Fetched test image, size:", res.data.length);
+    testImageBuffer = Buffer.from(res.data);
+  } catch (err) {
+    console.log(err);
+    console.warn("⚠️ Failed to fetch test image, OCR tests will be skipped");
+    testImageBuffer = null;
+  }
+});
 
 describe("API End-to-End Tests with manual cookie", () => {
+  jest.setTimeout(60000);
+
   // -------- Login Route --------
   test("POST /users/login - should return auth data and set cookie", async () => {
     const payload = {
       idToken:
-        "eyJhbGciOiJSUzI1NiIsImtpZCI6IjUwMDZlMjc5MTVhMTcwYWIyNmIxZWUzYjgxZDExNjU0MmYxMjRmMjAiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vbWVpY28tOTA5OTkiLCJhdWQiOiJtZWljby05MDk5OSIsImF1dGhfdGltZSI6MTc1ODEzOTYxNSwidXNlcl9pZCI6IlNKNktRdjNYcG5PUkwwVEZIQTA5NDJHMkRDdzEiLCJzdWIiOiJTSjZLUXYzWHBuT1JMMFRGSEEwOTQyRzJEQ3cxIiwiaWF0IjoxNzU4MTM5NjE1LCJleHAiOjE3NTgxNDMyMTUsInBob25lX251bWJlciI6Iis5MTcwNDc1ODQ3NDEiLCJmaXJlYmFzZSI6eyJpZGVudGl0aWVzIjp7InBob25lIjpbIis5MTcwNDc1ODQ3NDEiXX0sInNpZ25faW5fcHJvdmlkZXIiOiJwaG9uZSJ9fQ.bJn2wDrV7T5uvNP6B7GahzUPTe5hncVP8EQMRn6WK4uP8k6kyAQvq1UDSDtn_XGX4QZJPRkGqujWkJwFmaTlloH1NoF5wIV211SJPMuc7nVpl2rEDQWbCPcSCNv9CemUyA7JQC4kNXQZLdpFtOyKt4z7bHIW53rU16mqKnDbrt9fAw3y4QtY_KUh9lMO3IOBPzVOICcAvKR5dRlP8pPTRIcuMwlh1e5YViFsONCfUAsIVSVZ0r6uBuQDpOcOkWAe9XETjRWeSkCVUh0Rg-NZwvMjHNWaXVSciiRtl3mWq7dg64v-OtuCFn9DnTDeudMnMKSH1QhgsG2oDGF7y-XT4w",
+        "eyJhbGciOiJSUzI1NiIsImtpZCI6IjUwMDZlMjc5MTVhMTcwYWIyNmIxZWUzYjgxZDExNjU0MmYxMjRmMjAiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vbWVpY28tOTA5OTkiLCJhdWQiOiJtZWljby05MDk5OSIsImF1dGhfdGltZSI6MTc1ODIzMjUzNiwidXNlcl9pZCI6IlNKNktRdjNYcG5PUkwwVEZIQTA5NDJHMkRDdzEiLCJzdWIiOiJTSjZLUXYzWHBuT1JMMFRGSEEwOTQyRzJEQ3cxIiwiaWF0IjoxNzU4MjMyNTM2LCJleHAiOjE3NTgyMzYxMzYsInBob25lX251bWJlciI6Iis5MTcwNDc1ODQ3NDEiLCJmaXJlYmFzZSI6eyJpZGVudGl0aWVzIjp7InBob25lIjpbIis5MTcwNDc1ODQ3NDEiXX0sInNpZ25faW5fcHJvdmlkZXIiOiJwaG9uZSJ9fQ.n-gzkFrFabNE0trLNSd1VJok3kMp7GVh4gWIGndh-iEdCwle2FsJFqYIgP-YgRYevnDcPL95R4fU19Dqmw5PC8EMm0No8KGHMdPEcaopIFHXs6L1lVxy4_2UorJoymvQV1Wc-pmYX4tAwz4ho2ze9uAzjRBKsJppEsTS5B3YEQ6x2FtgtLa3hg-QkcuxyjH5dzMPBd9AQOyPMv7knWeln2cRlJ8bf4EUErbRGCJrYBjPdSAuegsSiexhhFIod8iFAzJqTPs_njZJhXipGOUy66SmpqTiXmlZjURLkbl06vh9V9AaGO3h8OWdbD2Brwj_qI8UjVRcOPKCaHs0V_ganw",
     };
+
     const response = await axios
       .post(`${BASE_URL}/users/login`, payload)
       .catch((e) => e.response);
+
     console.log("login", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
     expect(response.data).toHaveProperty("data");
     expect(response.data.data).toHaveProperty("userId");
@@ -42,8 +65,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("create user", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(201);
     expect(response.data.data).toMatchObject(payload);
   });
@@ -54,8 +78,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("get user", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
     expect(response.data).toHaveProperty("data");
   });
@@ -67,8 +92,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("update user", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
     expect(response.data.data.name).toBe("Shibam Dey");
   });
@@ -97,8 +123,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("create prescription", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(201);
     prescriptionId = response.data.data.id;
   });
@@ -109,8 +136,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("get prescription by id", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
     expect(response.data.data.id).toBe(prescriptionId);
   });
@@ -122,8 +150,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("update prescription", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
     expect(response.data.data.status).toBe("completed");
   });
@@ -144,8 +173,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("create medicine", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(201);
     medicineId = response.data.data.id;
   });
@@ -157,22 +187,11 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("update medicine", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
     expect(response.data.data.frequency).toBe("2/day");
-  });
-
-  test("GET /users/:id - should return user profile", async () => {
-    const response = await axios
-      .get(`${BASE_URL}/users/${testUserId}`, {
-        headers: { Cookie: authCookie },
-      })
-      .catch((e) => e.response);
-    console.log("get user", response.data.data);
-    expect(response).toBeDefined();
-    expect(response.status).toBe(200);
-    expect(response.data).toHaveProperty("data");
   });
 
   test("DELETE /medicines/:id - delete medicine", async () => {
@@ -181,8 +200,9 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("delete medicine", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
   });
 
@@ -192,8 +212,139 @@ describe("API End-to-End Tests with manual cookie", () => {
         headers: { Cookie: authCookie },
       })
       .catch((e) => e.response);
+
     console.log("delete prescription", response.data);
-    expect(response).toBeDefined();
+
     expect(response.status).toBe(200);
   });
+
+  // -------- AI Chat Routes --------
+  describe("AI Chat Routes", () => {
+    let aiJobId;
+
+    beforeAll(async () => {
+      const question = "What medicines am I currently taking?";
+
+      const response = await axios
+        .post(
+          `${BASE_URL}/ask/${testUserId}`,
+          { question },
+          { headers: { Cookie: authCookie } }
+        )
+        .catch((e) => e.response);
+
+      console.log("AI Ask Response:", response?.data);
+
+      expect(response.status).toBe(202);
+      aiJobId = response.data.data.jobId;
+      await new Promise((r) => setTimeout(r, 1500));
+    });
+
+    test("GET /answer/:jobId - should return processing status initially", async () => {
+      const response = await axios
+        .get(`${BASE_URL}/answer/${aiJobId}`, {
+          headers: { Cookie: authCookie },
+        })
+        .catch((e) => e.response);
+
+      console.log("AI Answer (initial poll):", response?.data);
+
+      expect([200, 202]).toContain(response.status);
+    });
+
+    test("GET /answer/:jobId - should eventually return completed result", async () => {
+      const MAX_RETRIES = 10;
+      const RETRY_DELAY = 2000;
+
+      let result = null;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const response = await axios
+          .get(`${BASE_URL}/answer/${aiJobId}`, {
+            headers: { Cookie: authCookie },
+          })
+          .catch((e) => e.response);
+
+        if (response.status === 200) {
+          result = response.data;
+          break;
+        }
+        await new Promise((r) => setTimeout(r, RETRY_DELAY));
+      }
+
+      expect(result).toBeDefined();
+      expect(result.data.status).not.toBe("processing");
+    });
+
+    test("GET /answer/:jobId - should return 404 for invalid jobId", async () => {
+      const response = await axios
+        .get(`${BASE_URL}/answer/invalid123`, {
+          headers: { Cookie: authCookie },
+        })
+        .catch((e) => e.response);
+
+      expect(response.status).toBe(404);
+    });
+  });
+
+  // -------- OCR Tests --------
+  {
+    test("POST /extract/:userId - should accept image and return jobId", async () => {
+      const form = new FormData();
+      form.append("image", testImageBuffer, "prescription.jpg");
+      form.append(
+        "doctorInfo",
+        JSON.stringify({ name: "Dr. Test", specialty: "General" })
+      );
+
+      const res = await axios
+        .post(`${BASE_URL}/prescriptions/extract/${testUserId}`, form, {
+          headers: { ...form.getHeaders(), Cookie: authCookie },
+        })
+        .catch((e) => e.response);
+
+      expect(res.status).toBe(202);
+      expect(res.data).toHaveProperty("code", "ACCEPTED");
+      expect(res.data).toHaveProperty("status", 202);
+      expect(res.data).toHaveProperty(
+        "message",
+        "Request accepted for processing."
+      );
+      expect(res.data.data).toHaveProperty("jobId");
+      expect(res.data.data).toHaveProperty("status", "queued");
+
+      ocrJobId = res.data.data.jobId;
+    });
+
+    test("GET /extract/status/:jobId - should eventually return 'completed'", async () => {
+      if (!ocrJobId) return;
+
+      const MAX_RETRIES = 8;
+      const RETRY_DELAY = 3000;
+
+      let result = null;
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const res = await axios
+          .get(`${BASE_URL}/prescriptions/extract/status/${ocrJobId}`, {
+            headers: { Cookie: authCookie },
+          })
+          .catch((e) => e.response);
+
+        if (res.data.data?.status === "completed") {
+          result = res.data;
+          break;
+        }
+        if (res.data.data?.status === "failed") {
+          throw new Error(`OCR Job failed: ${res.data.data.error}`);
+        }
+        await new Promise((r) => setTimeout(r, RETRY_DELAY));
+      }
+
+      expect(result).toBeDefined();
+      expect(result.data.status).toBe("completed");
+      expect(result.data.result).toHaveProperty("id");
+      expect(result.data.result.doctor).toBeTruthy();
+      expect(Array.isArray(result.data.result.medicines)).toBe(true);
+    });
+  }
 });

@@ -91,3 +91,5 @@ export async function deletePrescription(id) {
     throw new Error("Failed to delete prescription: " + err.message);
   }
 }
+
+

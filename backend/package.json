@@ -11,6 +11,7 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.16.1",
     "body-parser": "^2.2.0",
     "bullmq": "^5.58.5",
@@ -20,12 +21,14 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "express-xss-sanitizer": "^2.0.0",
+    "file-type": "^21.0.0",
     "firebase-admin": "^13.5.0",
     "helmet": "^8.1.0",
     "hpp": "^0.2.3",
     "ioredis": "^5.7.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.1",
+    "multer": "^2.0.2",
     "winston": "^3.17.0"
   },
   "devDependencies": {

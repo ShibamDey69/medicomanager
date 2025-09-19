@@ -143,7 +143,7 @@ class Prescription {
         : {};
 
       const processor = new PrescriptionOCRProcessor(
-        process.env.GEMINI_API_KEY,
+        process.env.GOOGLE_API_KEY,
         { useQueue: true }
       );
       const result = await processor.processImageToPrescription(

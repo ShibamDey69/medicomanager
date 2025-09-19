@@ -13,6 +13,7 @@ dotenv.config();
 import userRoutes from "./routes/user.routes.js";
 import prescriptionRoutes from "./routes/prescription.routes.js";
 import medicineRoutes from "./routes/medicine.routes.js";
+import aichatRoutes from "./routes/aichat.routes.js";
 const app = express();
 
 app.use(helmet());
@@ -45,6 +46,7 @@ app.use("/api", limiter);
 app.use("/api/users", userRoutes);
 app.use("/api/prescriptions", prescriptionRoutes);
 app.use("/api/medicines", medicineRoutes);
+app.use("/api", aichatRoutes);
 app.get("/", (req, res) => {
   logger.info("loll")
   res.status(200).send("All ok");

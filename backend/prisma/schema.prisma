@@ -24,6 +24,7 @@ model User {
   bloodGroup      String?
   chronicDiseases String?
   allergies       String?
+  surgery         String?
   familialIssues  String?
   avatar          String?
   account         Account?

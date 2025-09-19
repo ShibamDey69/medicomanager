@@ -7,7 +7,10 @@ import { Queue } from "bullmq";
 
 class AIController {
   constructor() {
-    this.aiController = new MedicalAssistantController(process.env.GEMINI_API_KEY);
+    this.aiController = new MedicalAssistantController(process.env.GOOGLE_API_KEY,{
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    });
     this.queue = new Queue("medical-assistant", { connection: this.aiController.redis });
   }
 
