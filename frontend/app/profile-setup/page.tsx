@@ -17,6 +17,8 @@ import { useAuth } from "@/hooks/use-auth"
 import { ArrowLeft, ArrowRight, User, Upload, X, Plus, Check } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
+
 const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]
 const GENDERS = ["Male", "Female", "Other", "Prefer not to say"]
 
@@ -51,13 +53,39 @@ const triggerHaptic = () => {
   }
 }
 
+const createUserProfile = async (userId: string, profileData: any) => {
+  try {
+    const authData = localStorage.getItem("medico_auth")
+    const token = authData ? JSON.parse(authData).phone : null
+
+    const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      credentials: "include",
+      body: JSON.stringify(profileData),
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.message || `Profile creation failed: ${response.status}`)
+    }
+
+    return await response.json()
+  } catch (error) {
+    throw error
+  }
+}
+
 export default function ProfileSetupPage() {
   const router = useRouter()
   const { updateProfile } = useAuth()
   const [currentStep, setCurrentStep] = useState(1)
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState("")
 
-  // Form data
   const [formData, setFormData] = useState({
     name: "",
     dateOfBirth: "",
@@ -74,7 +102,6 @@ export default function ProfileSetupPage() {
   const [customAllergy, setCustomAllergy] = useState("")
   const [customCondition, setCustomCondition] = useState("")
 
-  // Calculate age when DOB changes
   useEffect(() => {
     if (formData.dateOfBirth) {
       const birthDate = new Date(formData.dateOfBirth)
@@ -92,6 +119,7 @@ export default function ProfileSetupPage() {
 
   const handleInputChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
+    setError("")
   }
 
   const handleArrayToggle = (field: "chronicDiseases" | "allergies", value: string) => {
@@ -104,9 +132,10 @@ export default function ProfileSetupPage() {
 
   const addCustomAllergy = useCallback(() => {
     const trimmedAllergy = customAllergy.trim()
-    if (trimmedAllergy && !formData.allergies.some(allergy => 
-      allergy.toLowerCase() === trimmedAllergy.toLowerCase()
-    )) {
+    if (
+      trimmedAllergy &&
+      !formData.allergies.some((allergy) => allergy.toLowerCase() === trimmedAllergy.toLowerCase())
+    ) {
       setFormData((prev) => ({
         ...prev,
         allergies: [...prev.allergies, trimmedAllergy],
@@ -118,9 +147,10 @@ export default function ProfileSetupPage() {
 
   const addCustomCondition = useCallback(() => {
     const trimmedCondition = customCondition.trim()
-    if (trimmedCondition && !formData.chronicDiseases.some(condition => 
-      condition.toLowerCase() === trimmedCondition.toLowerCase()
-    )) {
+    if (
+      trimmedCondition &&
+      !formData.chronicDiseases.some((condition) => condition.toLowerCase() === trimmedCondition.toLowerCase())
+    ) {
       setFormData((prev) => ({
         ...prev,
         chronicDiseases: [...prev.chronicDiseases, trimmedCondition],
@@ -135,7 +165,10 @@ export default function ProfileSetupPage() {
     if (file) {
       const reader = new FileReader()
       reader.onload = (e) => {
-        setFormData((prev) => ({ ...prev, avatar: e.target?.result as string }))
+        setFormData((prev) => ({
+          ...prev,
+          avatar: e.target?.result as string,
+        }))
       }
       reader.readAsDataURL(file)
     }
@@ -161,9 +194,31 @@ export default function ProfileSetupPage() {
   const handleComplete = async () => {
     triggerHaptic()
     setIsLoading(true)
+    setError("")
 
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const authData = localStorage.getItem("medico_auth")
+      const parsedAuthData = authData ? JSON.parse(authData) : null
+      const userId = parsedAuthData?.userId
+
+      if (!userId) {
+        throw new Error("User ID not found. Please login again.")
+      }
+
+      const profilePayload = {
+        name: formData.name,
+        DOB: new Date(formData.dateOfBirth).toISOString(),
+        gender: formData.gender,
+        bloodGroup: formData.bloodGroup,
+        chronicDiseases: formData.chronicDiseases.length > 0 ? formData.chronicDiseases.join(", ") : null,
+        allergies: formData.allergies.length > 0 ? formData.allergies.join(", ") : null,
+        surgery: formData.previousOperations || null,
+        familialIssues: formData.familialHealthIssues || null,
+        avatar: formData.avatar || null,
+      }
+
+      await createUserProfile(userId, profilePayload)
+
       updateProfile({
         name: formData.name,
         dateOfBirth: formData.dateOfBirth,
@@ -177,9 +232,18 @@ export default function ProfileSetupPage() {
         avatar: formData.avatar,
       })
 
-      setIsLoading(false)
+      const updatedAuthData = {
+        ...parsedAuthData,
+        hasProfile: true,
+      }
+      localStorage.setItem("medico_auth", JSON.stringify(updatedAuthData))
+
       router.push("/dashboard")
-    }, 1500)
+    } catch (error: any) {
+      setError(error.message || "Failed to create profile. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const steps = [
@@ -190,25 +254,24 @@ export default function ProfileSetupPage() {
 
   const containerVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: { 
-      opacity: 1, 
+    visible: {
+      opacity: 1,
       y: 0,
       transition: {
         duration: 0.5,
-        staggerChildren: 0.1
-      }
-    }
+        staggerChildren: 0.1,
+      },
+    },
   }
 
   const itemVariants = {
     hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 }
+    visible: { opacity: 1, y: 0 },
   }
 
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5">
-        {/* Header */}
         <motion.header
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
@@ -227,20 +290,18 @@ export default function ProfileSetupPage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            
+
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6, delay: 0.2 }}
               className="flex items-center space-x-4"
             >
-              {/* Enhanced animated logo */}
               <motion.div
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="relative group cursor-pointer"
               >
-                {/* Main logo container */}
                 <motion.div
                   animate={{
                     rotate: [0, 2, -2, 0],
@@ -248,12 +309,11 @@ export default function ProfileSetupPage() {
                   }}
                   transition={{
                     duration: 4,
-                    repeat: Infinity,
+                    repeat: Number.POSITIVE_INFINITY,
                     ease: "easeInOut",
                   }}
                   className="relative w-12 h-12"
                 >
-                  {/* Main logo */}
                   <div className="w-full h-full bg-gradient-to-br from-primary via-primary to-primary/90 rounded-2xl flex items-center justify-center shadow-lg shadow-primary/25 group-hover:shadow-primary/40 transition-all duration-300">
                     <motion.div
                       animate={{
@@ -261,18 +321,29 @@ export default function ProfileSetupPage() {
                         rotateY: [0, 180, 360],
                       }}
                       transition={{
-                        scale: { duration: 3, repeat: Infinity, ease: "easeInOut" },
-                        rotateY: { duration: 4, repeat: Infinity, ease: "linear" },
+                        scale: {
+                          duration: 3,
+                          repeat: Number.POSITIVE_INFINITY,
+                          ease: "easeInOut",
+                        },
+                        rotateY: {
+                          duration: 4,
+                          repeat: Number.POSITIVE_INFINITY,
+                          ease: "linear",
+                        },
                       }}
                     >
                       <User className="w-6 h-6 text-primary-foreground" />
                     </motion.div>
                   </div>
 
-                  {/* Orbiting elements */}
                   <motion.div
                     animate={{ rotate: 360 }}
-                    transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                    transition={{
+                      duration: 8,
+                      repeat: Number.POSITIVE_INFINITY,
+                      ease: "linear",
+                    }}
                     className="absolute inset-0"
                   >
                     <div className="absolute -top-1 left-1/2 w-2 h-2 bg-green-500 rounded-full shadow-md shadow-green-500/50 transform -translate-x-1/2" />
@@ -280,13 +351,16 @@ export default function ProfileSetupPage() {
 
                   <motion.div
                     animate={{ rotate: -360 }}
-                    transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                    transition={{
+                      duration: 10,
+                      repeat: Number.POSITIVE_INFINITY,
+                      ease: "linear",
+                    }}
                     className="absolute inset-0"
                   >
                     <div className="absolute top-1/2 -right-1 w-1.5 h-1.5 bg-blue-500 rounded-full shadow-md shadow-blue-500/50 transform -translate-y-1/2" />
                   </motion.div>
 
-                  {/* Pulsing ring on hover */}
                   <motion.div
                     animate={{
                       scale: [1, 1.3, 1],
@@ -294,7 +368,7 @@ export default function ProfileSetupPage() {
                     }}
                     transition={{
                       duration: 2,
-                      repeat: Infinity,
+                      repeat: Number.POSITIVE_INFINITY,
                       ease: "easeOut",
                     }}
                     className="absolute -inset-2 border border-primary/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
@@ -311,8 +385,7 @@ export default function ProfileSetupPage() {
                 >
                   MedicoManager
                 </motion.h1>
-                
-                {/* Profile setup indicator */}
+
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -326,20 +399,18 @@ export default function ProfileSetupPage() {
                     }}
                     transition={{
                       duration: 2,
-                      repeat: Infinity,
+                      repeat: Number.POSITIVE_INFINITY,
                       ease: "easeInOut",
                     }}
                     className="flex items-center space-x-1"
                   >
                     <div className="w-2 h-2 bg-primary rounded-full" />
-                    <span className="text-xs font-medium text-muted-foreground">
-                      Profile Setup
-                    </span>
+                    <span className="text-xs font-medium text-muted-foreground">Profile Setup</span>
                   </motion.div>
                 </motion.div>
               </div>
             </motion.div>
-            
+
             <motion.div
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -351,40 +422,32 @@ export default function ProfileSetupPage() {
         </motion.header>
 
         <div className="container mx-auto px-4 py-8 max-w-2xl">
-          {/* Progress Steps */}
-          <motion.div 
-            initial="hidden"
-            animate="visible"
-            variants={containerVariants}
-            className="mb-8"
-          >
+          <motion.div initial="hidden" animate="visible" variants={containerVariants} className="mb-8">
             <div className="flex items-center justify-between mb-4 relative">
-              {/* Progress Line Background */}
               <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-muted -translate-y-1/2 z-0" />
-              {/* Active Progress Line */}
-              <div 
+              <div
                 className="absolute top-1/2 left-0 h-0.5 bg-primary -translate-y-1/2 transition-all duration-700 ease-out z-10"
-                style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
+                style={{
+                  width: `${((currentStep - 1) / (steps.length - 1)) * 100}%`,
+                }}
               />
-              
+
               {steps.map((step, index) => {
                 const isActive = currentStep >= step.number
                 const isCurrent = currentStep === step.number
-                
+
                 return (
-                  <motion.div 
-                    key={step.number} 
-                    variants={itemVariants}
-                    className="flex items-center relative z-20"
-                  >
+                  <motion.div key={step.number} variants={itemVariants} className="flex items-center relative z-20">
                     <motion.div
                       className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
-                        isActive
-                          ? "bg-primary text-primary-foreground shadow-lg"
-                          : "bg-muted text-muted-foreground"
+                        isActive ? "bg-primary text-primary-foreground shadow-lg" : "bg-muted text-muted-foreground"
                       } ${isCurrent ? "ring-4 ring-primary/20" : ""}`}
                       animate={isCurrent ? { scale: [1, 1.05, 1] } : { scale: 1 }}
-                      transition={{ repeat: isCurrent ? Infinity : 0, duration: 2, ease: "easeInOut" }}
+                      transition={{
+                        repeat: isCurrent ? Number.POSITIVE_INFINITY : 0,
+                        duration: 2,
+                        ease: "easeInOut",
+                      }}
                     >
                       {step.number}
                     </motion.div>
@@ -399,14 +462,13 @@ export default function ProfileSetupPage() {
                 )
               })}
             </div>
-            
+
             <div className="text-center">
               <h2 className="text-xl font-semibold text-foreground">{steps[currentStep - 1].title}</h2>
               <p className="text-muted-foreground text-sm">{steps[currentStep - 1].description}</p>
             </div>
           </motion.div>
 
-          {/* Form Card */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -414,6 +476,16 @@ export default function ProfileSetupPage() {
           >
             <Card className="border-0 shadow-xl rounded-2xl bg-card/90 backdrop-blur-sm">
               <CardContent className="p-6">
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="text-destructive text-sm bg-destructive/10 p-3 rounded-xl mb-6"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+
                 <AnimatePresence mode="wait">
                   {currentStep === 1 && (
                     <motion.div
@@ -466,9 +538,7 @@ export default function ProfileSetupPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-foreground">
-                          Gender *
-                        </Label>
+                        <Label className="text-sm font-medium text-foreground">Gender *</Label>
                         <Select value={formData.gender} onValueChange={(value) => handleInputChange("gender", value)}>
                           <SelectTrigger className="rounded-2xl h-12 border-border bg-background/50 focus:bg-background">
                             <SelectValue placeholder="Select your gender" />
@@ -495,9 +565,7 @@ export default function ProfileSetupPage() {
                       className="space-y-6"
                     >
                       <div className="space-y-2">
-                        <Label className="text-sm font-medium text-foreground">
-                          Blood Group *
-                        </Label>
+                        <Label className="text-sm font-medium text-foreground">Blood Group *</Label>
                         <Select
                           value={formData.bloodGroup}
                           onValueChange={(value) => handleInputChange("bloodGroup", value)}
@@ -516,9 +584,7 @@ export default function ProfileSetupPage() {
                       </div>
 
                       <div className="space-y-3">
-                        <Label className="text-sm font-medium text-foreground">
-                          Chronic Diseases (if any)
-                        </Label>
+                        <Label className="text-sm font-medium text-foreground">Chronic Diseases (if any)</Label>
                         <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
                           <div className="flex flex-wrap gap-2 mb-4">
                             {COMMON_CONDITIONS.map((condition) => (
@@ -533,14 +599,12 @@ export default function ProfileSetupPage() {
                                 onClick={() => handleArrayToggle("chronicDiseases", condition)}
                               >
                                 {condition}
-                                {formData.chronicDiseases.includes(condition) && (
-                                  <Check className="w-3 h-3 ml-1" />
-                                )}
+                                {formData.chronicDiseases.includes(condition) && <Check className="w-3 h-3 ml-1" />}
                               </Badge>
                             ))}
-                            
+
                             {formData.chronicDiseases
-                              .filter(condition => !COMMON_CONDITIONS.includes(condition))
+                              .filter((condition) => !COMMON_CONDITIONS.includes(condition))
                               .map((condition) => (
                                 <Badge
                                   key={condition}
@@ -565,7 +629,7 @@ export default function ProfileSetupPage() {
                               variant="outline"
                               size="icon"
                               onClick={addCustomCondition}
-                              className="rounded-xl h-10 w-10 shrink-0"
+                              className="rounded-xl h-10 w-10 shrink-0 bg-transparent"
                             >
                               <Plus className="w-4 h-4" />
                             </Button>
@@ -574,9 +638,7 @@ export default function ProfileSetupPage() {
                       </div>
 
                       <div className="space-y-3">
-                        <Label className="text-sm font-medium text-foreground">
-                          Allergies (if any)
-                        </Label>
+                        <Label className="text-sm font-medium text-foreground">Allergies (if any)</Label>
                         <div className="p-4 rounded-2xl bg-muted/30 border border-border/50">
                           <div className="flex flex-wrap gap-2 mb-4">
                             {COMMON_ALLERGIES.map((allergy) => (
@@ -591,14 +653,12 @@ export default function ProfileSetupPage() {
                                 onClick={() => handleArrayToggle("allergies", allergy)}
                               >
                                 {allergy}
-                                {formData.allergies.includes(allergy) && (
-                                  <Check className="w-3 h-3 ml-1" />
-                                )}
+                                {formData.allergies.includes(allergy) && <Check className="w-3 h-3 ml-1" />}
                               </Badge>
                             ))}
-                            
+
                             {formData.allergies
-                              .filter(allergy => !COMMON_ALLERGIES.includes(allergy))
+                              .filter((allergy) => !COMMON_ALLERGIES.includes(allergy))
                               .map((allergy) => (
                                 <Badge
                                   key={allergy}
@@ -623,7 +683,7 @@ export default function ProfileSetupPage() {
                               variant="outline"
                               size="icon"
                               onClick={addCustomAllergy}
-                              className="rounded-xl h-10 w-10 shrink-0"
+                              className="rounded-xl h-10 w-10 shrink-0 bg-transparent"
                             >
                               <Plus className="w-4 h-4" />
                             </Button>
@@ -710,7 +770,9 @@ export default function ProfileSetupPage() {
                           </div>
                           <div>
                             <span className="text-muted-foreground">Date of Birth:</span>
-                            <p className="font-medium text-foreground">{new Date(formData.dateOfBirth).toLocaleDateString()}</p>
+                            <p className="font-medium text-foreground">
+                              {new Date(formData.dateOfBirth).toLocaleDateString()}
+                            </p>
                           </div>
                         </div>
 
@@ -743,14 +805,18 @@ export default function ProfileSetupPage() {
                         {formData.previousOperations && (
                           <div>
                             <span className="text-muted-foreground text-sm">Previous Operations:</span>
-                            <p className="text-sm mt-1 bg-muted/50 p-2 rounded-lg text-foreground">{formData.previousOperations}</p>
+                            <p className="text-sm mt-1 bg-muted/50 p-2 rounded-lg text-foreground">
+                              {formData.previousOperations}
+                            </p>
                           </div>
                         )}
 
                         {formData.familialHealthIssues && (
                           <div>
                             <span className="text-muted-foreground text-sm">Familial Health Issues:</span>
-                            <p className="text-sm mt-1 bg-muted/50 p-2 rounded-lg text-foreground">{formData.familialHealthIssues}</p>
+                            <p className="text-sm mt-1 bg-muted/50 p-2 rounded-lg text-foreground">
+                              {formData.familialHealthIssues}
+                            </p>
                           </div>
                         )}
                       </div>
@@ -764,7 +830,7 @@ export default function ProfileSetupPage() {
                     variant="outline"
                     onClick={handleBack}
                     disabled={currentStep === 1}
-                    className="rounded-2xl px-6 transition-all duration-200"
+                    className="rounded-2xl px-6 transition-all duration-200 bg-transparent"
                   >
                     Back
                   </Button>
@@ -779,9 +845,9 @@ export default function ProfileSetupPage() {
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   ) : (
-                    <Button 
-                      onClick={handleComplete} 
-                      disabled={isLoading} 
+                    <Button
+                      onClick={handleComplete}
+                      disabled={isLoading}
                       className="rounded-2xl px-6 transition-all duration-200"
                     >
                       {isLoading ? (

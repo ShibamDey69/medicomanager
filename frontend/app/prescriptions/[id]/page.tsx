@@ -34,22 +34,27 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+
 interface Medicine {
-  id?: string;
+  id: string;
   name: string;
   dosage: string;
   frequency: string;
   duration: string;
-  instructions: string;
+  instruction: string;
   status: "active" | "completed" | "paused" | "discontinued";
 }
 
 interface Prescription {
   id: string;
   doctor: string;
+  specialty: string;
   date: string;
   medicines: Medicine[];
   status: "active" | "completed" | "expired";
+  userId: string;
   createdAt: string;
 }
 
@@ -60,22 +65,194 @@ export default function PrescriptionDetailsPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedPrescription, setEditedPrescription] =
     useState<Prescription | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  useEffect(() => {
-    const prescriptions = JSON.parse(
-      localStorage.getItem("medico_prescriptions") || "[]"
-    );
-    const found = prescriptions.find((p: Prescription) => p.id === params.id);
-
-    if (found) {
-      setPrescription(found);
-      setEditedPrescription({ ...found });
-    } else {
-      router.push("/prescriptions");
+  // Get user ID from localStorage
+  const getUserId = (): string | null => {
+    if (typeof window === "undefined") return null;
+    const authData = localStorage.getItem("medico_auth");
+    if (!authData) return null;
+    try {
+      const parsed = JSON.parse(authData);
+      return parsed.userId || null;
+    } catch {
+      return null;
     }
-  }, [params.id, router]);
+  };
+
+  // Fetch prescription from backend
+  const fetchPrescription = async () => {
+    const prescriptionId = params?.id as string;
+    if (!prescriptionId) {
+      router.push("/prescriptions");
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const response = await fetch(
+        `${API_BASE_URL}/prescriptions/${prescriptionId}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch prescription: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data && data.data) {
+        // Transform data to match our UI expectations
+        const transformedData: Prescription = {
+          id: data.data.id,
+          doctor: data.data.doctor || "Unknown Doctor",
+          specialty: data.data.specialty || "General",
+          date: data.data.date || new Date().toISOString(),
+          medicines:
+            data.data.medicines && Array.isArray(data.data.medicines)
+              ? data.data.medicines.map((med: any) => ({
+                  id: med.id,
+                  name: med.name || "Unknown Medicine",
+                  dosage: med.dosage || "",
+                  frequency: med.frequency || "as directed",
+                  duration: med.duration || "",
+                  instruction: med.instruction || "",
+                  status: med.status || "active",
+                }))
+              : [],
+          status: data.data.status || "active",
+          userId: data.data.userId || "",
+          createdAt: data.data.createdAt || new Date().toISOString(),
+        };
+
+        setPrescription(transformedData);
+        setEditedPrescription({ ...transformedData });
+      }
+    } catch (err: any) {
+      console.error("Error fetching prescription:", err);
+      setError(err.message || "Failed to load prescription");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Update prescription in backend
+  const updatePrescription = async () => {
+    if (!editedPrescription) return;
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      // Check if any medicine is active to determine prescription status
+      const hasActiveMedicine = editedPrescription.medicines.some(
+        (med) => med.status === "active"
+      );
+      const updatedPrescriptionData = {
+        ...editedPrescription,
+        status: hasActiveMedicine ? "active" : "completed",
+      };
+
+      const response = await fetch(
+        `${API_BASE_URL}/prescriptions/${editedPrescription.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify(updatedPrescriptionData),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to update prescription: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      if (data && data.data) {
+        // Transform response data
+        const transformedData: Prescription = {
+          id: data.data.id,
+          doctor: data.data.doctor || "Unknown Doctor",
+          specialty: data.data.specialty || "General",
+          date: data.data.date || new Date().toISOString(),
+          medicines:
+            data.data.medicines && Array.isArray(data.data.medicines)
+              ? data.data.medicines.map((med: any) => ({
+                  id: med.id,
+                  name: med.name || "Unknown Medicine",
+                  dosage: med.dosage || "",
+                  frequency: med.frequency || "as directed",
+                  duration: med.duration || "",
+                  instruction: med.instruction || "",
+                  status: med.status || "active",
+                }))
+              : [],
+          status: data.data.status || "active",
+          userId: data.data.userId || "",
+          createdAt: data.data.createdAt || new Date().toISOString(),
+        };
+
+        setPrescription(transformedData);
+        setEditedPrescription({ ...transformedData });
+        setIsEditing(false);
+      }
+    } catch (err: any) {
+      console.error("Error updating prescription:", err);
+      setError(err.message || "Failed to update prescription");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Delete prescription from backend
+  const deletePrescription = async () => {
+    if (!prescription) return;
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const response = await fetch(
+        `${API_BASE_URL}/prescriptions/${prescription.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to delete prescription: ${response.status}`);
+      }
+
+      // Redirect to prescriptions list after successful deletion
+      router.push("/prescriptions");
+    } catch (err: any) {
+      console.error("Error deleting prescription:", err);
+      setError(err.message || "Failed to delete prescription");
+      setIsLoading(false);
+    }
+  };
+
+  // Load prescription on component mount
+  useEffect(() => {
+    fetchPrescription();
+  }, [params.id]);
 
   const handleEdit = () => {
     setIsEditing(true);
@@ -83,39 +260,14 @@ export default function PrescriptionDetailsPage() {
 
   const handleCancel = () => {
     setIsEditing(false);
-    setEditedPrescription(prescription ? { ...prescription } : null);
+    if (prescription) {
+      setEditedPrescription({ ...prescription });
+    }
   };
 
   const handleSave = async () => {
     if (!editedPrescription) return;
-
-    setIsLoading(true);
-
-    // Mock save operation
-    setTimeout(() => {
-      const hasActiveMedicine = editedPrescription.medicines.some(
-        (med) => med.status === "active"
-      );
-      const updatedPrescription: Prescription = {
-        ...editedPrescription,
-        status: hasActiveMedicine ? "active" : "completed",
-      };
-
-      const prescriptions = JSON.parse(
-        localStorage.getItem("medico_prescriptions") || "[]"
-      );
-      const updatedPrescriptions = prescriptions.map((p: Prescription) =>
-        p.id === updatedPrescription.id ? updatedPrescription : p
-      );
-
-      localStorage.setItem(
-        "medico_prescriptions",
-        JSON.stringify(updatedPrescriptions)
-      );
-      setPrescription(updatedPrescription);
-      setIsEditing(false);
-      setIsLoading(false);
-    }, 1000);
+    await updatePrescription();
   };
 
   const handleDelete = () => {
@@ -123,26 +275,8 @@ export default function PrescriptionDetailsPage() {
   };
 
   const confirmDelete = async () => {
-    if (!prescription) return;
-
-    setIsLoading(true);
-
-    setTimeout(() => {
-      const prescriptions = JSON.parse(
-        localStorage.getItem("medico_prescriptions") || "[]"
-      );
-      const updatedPrescriptions = prescriptions.filter(
-        (p: Prescription) => p.id !== prescription.id
-      );
-
-      localStorage.setItem(
-        "medico_prescriptions",
-        JSON.stringify(updatedPrescriptions)
-      );
-      setIsLoading(false);
-      setShowDeleteConfirm(false);
-      router.push("/prescriptions");
-    }, 1000);
+    await deletePrescription();
+    setShowDeleteConfirm(false);
   };
 
   const cancelDelete = () => {
@@ -151,7 +285,6 @@ export default function PrescriptionDetailsPage() {
 
   const handleFieldChange = (field: string, value: string) => {
     if (!editedPrescription) return;
-
     setEditedPrescription((prev) =>
       prev ? { ...prev, [field]: value } : null
     );
@@ -163,13 +296,10 @@ export default function PrescriptionDetailsPage() {
     value: string
   ) => {
     if (!editedPrescription) return;
-
     setEditedPrescription((prev) => {
       if (!prev) return null;
-
       const updatedMedicines = [...prev.medicines];
       updatedMedicines[index] = { ...updatedMedicines[index], [field]: value };
-
       return { ...prev, medicines: updatedMedicines };
     });
   };
@@ -217,7 +347,8 @@ export default function PrescriptionDetailsPage() {
     }
   };
 
-  if (!prescription || !editedPrescription) {
+  // Show loading state
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/10 flex items-center justify-center">
         <motion.div
@@ -239,11 +370,57 @@ export default function PrescriptionDetailsPage() {
     );
   }
 
+  // Show error state
+  if (error) {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 flex items-center justify-center">
+          <div className="text-center p-6 bg-destructive/10 text-destructive rounded-lg max-w-md">
+            <p className="mb-4">{error}</p>
+            <Button
+              onClick={() => {
+                setIsLoading(true);
+                fetchPrescription();
+              }}
+              className="mt-4"
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      </AuthGuard>
+    );
+  }
+
+  if (!prescription || !editedPrescription) {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/10 flex items-center justify-center">
+          <div className="text-center p-6">
+            <h3 className="text-xl font-semibold text-foreground mb-2">
+              Prescription Not Found
+            </h3>
+            <p className="text-muted-foreground mb-4">
+              The prescription you're looking for doesn't exist or you don't
+              have permission to view it.
+            </p>
+            <Button
+              onClick={() => router.push("/prescriptions")}
+              className="rounded-xl"
+            >
+              Back to Prescriptions
+            </Button>
+          </div>
+        </div>
+      </AuthGuard>
+    );
+  }
+
   return (
     <AuthGuard>
       <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/10">
-       {/* Enhanced Header */}
-       <motion.header
+        {/* Enhanced Header */}
+        <motion.header
           initial={{ y: -100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
@@ -267,7 +444,6 @@ export default function PrescriptionDetailsPage() {
                 <ArrowLeft className="h-4 w-4 text-muted-foreground hover:text-foreground" />
               </Button>
             </motion.div>
-
             {/* Center Title Section - Clean and focused */}
             <motion.div
               initial={{ opacity: 0, y: -5 }}
@@ -289,7 +465,7 @@ export default function PrescriptionDetailsPage() {
                   }}
                   transition={{
                     duration: 4,
-                    repeat: Infinity,
+                    repeat: Number.POSITIVE_INFINITY,
                     ease: "easeInOut",
                   }}
                   className="relative w-6 h-6"
@@ -302,31 +478,44 @@ export default function PrescriptionDetailsPage() {
                         rotateY: [0, 180, 360],
                       }}
                       transition={{
-                        scale: { duration: 3, repeat: Infinity, ease: "easeInOut" },
-                        rotateY: { duration: 4, repeat: Infinity, ease: "linear" },
+                        scale: {
+                          duration: 3,
+                          repeat: Number.POSITIVE_INFINITY,
+                          ease: "easeInOut",
+                        },
+                        rotateY: {
+                          duration: 4,
+                          repeat: Number.POSITIVE_INFINITY,
+                          ease: "linear",
+                        },
                       }}
                     >
                       <Pill className="w-4 h-4 text-primary-foreground" />
                     </motion.div>
                   </div>
-
                   {/* Orbiting elements */}
                   <motion.div
                     animate={{ rotate: 360 }}
-                    transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                    transition={{
+                      duration: 8,
+                      repeat: Number.POSITIVE_INFINITY,
+                      ease: "linear",
+                    }}
                     className="absolute inset-0"
                   >
                     <div className="absolute -top-0.5 left-1/2 w-1.5 h-1.5 bg-green-500 rounded-full shadow-md shadow-green-500/50 transform -translate-x-1/2" />
                   </motion.div>
-
                   <motion.div
                     animate={{ rotate: -360 }}
-                    transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                    transition={{
+                      duration: 10,
+                      repeat: Number.POSITIVE_INFINITY,
+                      ease: "linear",
+                    }}
                     className="absolute inset-0"
                   >
                     <div className="absolute top-1/2 -right-0.5 w-1 h-1 bg-blue-500 rounded-full shadow-md shadow-blue-500/50 transform -translate-y-1/2" />
                   </motion.div>
-
                   {/* Pulsing ring on hover */}
                   <motion.div
                     animate={{
@@ -335,14 +524,13 @@ export default function PrescriptionDetailsPage() {
                     }}
                     transition={{
                       duration: 2,
-                      repeat: Infinity,
+                      repeat: Number.POSITIVE_INFINITY,
                       ease: "easeOut",
                     }}
                     className="absolute -inset-1 border border-primary/20 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                   />
                 </motion.div>
               </motion.div>
-
               {/* Responsive Title */}
               <span className="font-semibold text-foreground hidden sm:inline">
                 Prescription Details
@@ -351,7 +539,6 @@ export default function PrescriptionDetailsPage() {
                 Details
               </span>
             </motion.div>
-
             {/* Right Actions - Minimal set */}
             <motion.div
               initial={{ opacity: 0, x: 10 }}
@@ -399,7 +586,7 @@ export default function PrescriptionDetailsPage() {
                             />
                           ) : (
                             <span className="text-foreground break-words">
-                              Dr. {prescription.doctor}
+                              {prescription.doctor}
                             </span>
                           )}
                         </CardTitle>
@@ -409,7 +596,9 @@ export default function PrescriptionDetailsPage() {
                             {isEditing ? (
                               <Input
                                 type="date"
-                                value={editedPrescription.date}
+                                value={
+                                  editedPrescription.date.split("T")[0] || ""
+                                }
                                 onChange={(e) =>
                                   handleFieldChange("date", e.target.value)
                                 }
@@ -441,10 +630,14 @@ export default function PrescriptionDetailsPage() {
                             </div>
                           </Badge>
                         </div>
+                        {prescription.specialty && (
+                          <div className="text-sm text-muted-foreground">
+                            Specialty: {prescription.specialty}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
-
                   {/* Action Buttons - Mobile Optimized */}
                   <div className="flex items-center justify-end space-x-2 sm:space-x-3 flex-shrink-0">
                     <AnimatePresence mode="wait">
@@ -518,7 +711,6 @@ export default function PrescriptionDetailsPage() {
                   </div>
                 </div>
               </CardHeader>
-
               <CardContent className="p-4 sm:p-8 space-y-6 sm:space-y-8">
                 {/* Medications Section */}
                 <motion.div
@@ -545,11 +737,10 @@ export default function PrescriptionDetailsPage() {
                         : "items"}
                     </Badge>
                   </div>
-
                   <div className="grid gap-4 sm:gap-6">
                     {editedPrescription.medicines.map((medicine, index) => (
                       <motion.div
-                        key={index}
+                        key={medicine.id}
                         initial={{ opacity: 0, x: -20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ duration: 0.5, delay: index * 0.1 }}
@@ -565,7 +756,22 @@ export default function PrescriptionDetailsPage() {
                               </div>
                               <div>
                                 <h4 className="font-semibold text-foreground text-base sm:text-lg">
-                                  Medicine {index + 1}
+                                  {isEditing ? (
+                                    <Input
+                                      value={medicine.name}
+                                      onChange={(e) =>
+                                        handleMedicineChange(
+                                          index,
+                                          "name",
+                                          e.target.value
+                                        )
+                                      }
+                                      className="font-semibold border-2 border-dashed border-primary/30 bg-background/50 focus:border-primary focus:bg-background rounded-lg px-2 py-1 w-full text-sm sm:text-base"
+                                      placeholder="Medicine name"
+                                    />
+                                  ) : (
+                                    medicine.name
+                                  )}
                                 </h4>
                                 <p className="text-xs sm:text-sm text-muted-foreground">
                                   Treatment details
@@ -587,64 +793,36 @@ export default function PrescriptionDetailsPage() {
                               </div>
                             </Badge>
                           </div>
-
                           <div className="grid grid-cols-1 gap-4 sm:gap-6">
                             <div className="space-y-2 sm:space-y-3">
                               <Label className="text-xs sm:text-sm font-semibold text-foreground flex items-center space-x-2">
-                                <span>Medicine Name</span>
+                                <span>Dosage</span>
                                 {isEditing && (
                                   <span className="text-destructive">*</span>
                                 )}
                               </Label>
                               {isEditing ? (
                                 <Input
-                                  value={medicine.name}
+                                  value={medicine.dosage}
                                   onChange={(e) =>
                                     handleMedicineChange(
                                       index,
-                                      "name",
+                                      "dosage",
                                       e.target.value
                                     )
                                   }
-                                  className="rounded-lg sm:rounded-xl border-border/60 bg-background/80 focus:bg-background transition-all duration-300 text-sm sm:text-base font-medium"
-                                  placeholder="Enter medicine name"
+                                  className="rounded-lg sm:rounded-xl border-border/60 bg-background/80 focus:bg-background transition-all duration-300 text-sm sm:text-base"
+                                  placeholder="e.g., 10mg, 2 tablets"
                                 />
                               ) : (
                                 <div className="p-3 bg-background/60 rounded-lg sm:rounded-xl border border-border/30">
-                                  <p className="text-foreground font-semibold text-sm sm:text-base break-words">
-                                    {medicine.name}
+                                  <p className="text-foreground font-medium text-sm sm:text-base break-words">
+                                    {medicine.dosage}
                                   </p>
                                 </div>
                               )}
                             </div>
-
                             <div className="grid grid-cols-1 gap-4">
-                              <div className="space-y-2 sm:space-y-3">
-                                <Label className="text-xs sm:text-sm font-semibold text-foreground">
-                                  Dosage
-                                </Label>
-                                {isEditing ? (
-                                  <Input
-                                    value={medicine.dosage}
-                                    onChange={(e) =>
-                                      handleMedicineChange(
-                                        index,
-                                        "dosage",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="rounded-lg sm:rounded-xl border-border/60 bg-background/80 focus:bg-background transition-all duration-300 text-sm sm:text-base"
-                                    placeholder="e.g., 10mg, 2 tablets"
-                                  />
-                                ) : (
-                                  <div className="p-3 bg-background/60 rounded-lg sm:rounded-xl border border-border/30">
-                                    <p className="text-foreground font-medium text-sm sm:text-base break-words">
-                                      {medicine.dosage}
-                                    </p>
-                                  </div>
-                                )}
-                              </div>
-
                               <div className="space-y-2 sm:space-y-3">
                                 <Label className="text-xs sm:text-sm font-semibold text-foreground">
                                   Frequency
@@ -689,9 +867,6 @@ export default function PrescriptionDetailsPage() {
                                   </div>
                                 )}
                               </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-4">
                               <div className="space-y-2 sm:space-y-3">
                                 <Label className="text-xs sm:text-sm font-semibold text-foreground">
                                   Duration
@@ -717,7 +892,6 @@ export default function PrescriptionDetailsPage() {
                                   </div>
                                 )}
                               </div>
-
                               {isEditing && (
                                 <div className="space-y-2 sm:space-y-3">
                                   <Label className="text-xs sm:text-sm font-semibold text-foreground">
@@ -754,18 +928,17 @@ export default function PrescriptionDetailsPage() {
                                 </div>
                               )}
                             </div>
-
                             <div className="space-y-2 sm:space-y-3">
                               <Label className="text-xs sm:text-sm font-semibold text-foreground">
                                 Special Instructions
                               </Label>
                               {isEditing ? (
                                 <Input
-                                  value={medicine.instructions}
+                                  value={medicine.instruction}
                                   onChange={(e) =>
                                     handleMedicineChange(
                                       index,
-                                      "instructions",
+                                      "instruction",
                                       e.target.value
                                     )
                                   }
@@ -775,7 +948,7 @@ export default function PrescriptionDetailsPage() {
                               ) : (
                                 <div className="p-3 bg-background/60 rounded-lg sm:rounded-xl border border-border/30">
                                   <p className="text-foreground font-medium text-sm sm:text-base break-words">
-                                    {medicine.instructions ||
+                                    {medicine.instruction ||
                                       "No special instructions"}
                                   </p>
                                 </div>
@@ -787,7 +960,6 @@ export default function PrescriptionDetailsPage() {
                     ))}
                   </div>
                 </motion.div>
-
                 {/* Save/Cancel Actions - Only show when editing */}
                 <AnimatePresence>
                   {isEditing && (
@@ -822,7 +994,6 @@ export default function PrescriptionDetailsPage() {
                     </motion.div>
                   )}
                 </AnimatePresence>
-
                 {/* Metadata Section */}
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
@@ -860,6 +1031,14 @@ export default function PrescriptionDetailsPage() {
                           {prescription.id}
                         </span>
                       </div>
+                      <div className="flex flex-col space-y-1 sm:flex-row sm:justify-between sm:space-y-0">
+                        <span className="text-muted-foreground font-medium">
+                          User ID:
+                        </span>
+                        <span className="font-mono text-xs bg-muted/50 px-2 py-1 rounded-lg text-foreground break-all sm:break-normal">
+                          {prescription.userId}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </motion.div>
@@ -867,7 +1046,6 @@ export default function PrescriptionDetailsPage() {
             </Card>
           </motion.div>
         </div>
-
         {/* Delete Confirmation Modal */}
         <AnimatePresence>
           {showDeleteConfirm && (
@@ -881,7 +1059,6 @@ export default function PrescriptionDetailsPage() {
                 className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
                 onClick={cancelDelete}
               />
-
               {/* Modal */}
               <motion.div
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
@@ -916,7 +1093,6 @@ export default function PrescriptionDetailsPage() {
                       This action cannot be undone
                     </p>
                   </CardHeader>
-
                   <CardContent className="p-6 text-center space-y-6">
                     <div className="space-y-2">
                       <p className="text-foreground font-medium">
@@ -925,7 +1101,8 @@ export default function PrescriptionDetailsPage() {
                       {prescription && (
                         <div className="bg-muted/50 rounded-lg p-3 text-sm">
                           <p className="font-semibold text-foreground">
-                            Dr. {prescription.doctor}
+                            {" "}
+                            {prescription.doctor}
                           </p>
                           <p className="text-muted-foreground">
                             {new Date(prescription.date).toLocaleDateString(
@@ -944,13 +1121,12 @@ export default function PrescriptionDetailsPage() {
                         removed.
                       </p>
                     </div>
-
                     <div className="flex flex-col sm:flex-row gap-3 pt-4">
                       <Button
                         variant="outline"
                         onClick={cancelDelete}
                         disabled={isLoading}
-                        className="flex-1 rounded-xl border-border/60 hover:bg-muted/50 transition-all duration-300"
+                        className="flex-1 rounded-xl border-border/60 hover:bg-muted/50 transition-all duration-300 bg-transparent"
                       >
                         Cancel
                       </Button>

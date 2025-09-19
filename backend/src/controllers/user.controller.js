@@ -166,6 +166,7 @@ class User {
 
       return new Response(res, SUCCESS_CODES.OK, updatedUser);
     } catch (error) {
+      console.log(error);
       return new Response(
         res,
         HTTP_ERROR_CODES.INTERNAL_SERVER_ERROR,

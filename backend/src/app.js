@@ -6,7 +6,7 @@ import { xss } from "express-xss-sanitizer";
 import hpp from "hpp";
 import compression from "compression";
 import morgan from "morgan";
-import logger from "./utils/logger.js"
+import logger from "./utils/logger.js";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 dotenv.config();
@@ -34,21 +34,22 @@ app.use(cookieParser());
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 1000,
-  handler: (req,res,next) => {
-     res.status(429).json({
+  handler: (req, res, next) => {
+    res.status(429).json({
       success: false,
       error: "Rate limit exceeded",
-      message: "You can only make 5 requests every 15 minutes. Please wait before trying again.",
-    })
-  }
+      message:
+        "You can only make 5 requests every 15 minutes. Please wait before trying again.",
+    });
+  },
 });
 app.use("/api", limiter);
 app.use("/api/users", userRoutes);
 app.use("/api/prescriptions", prescriptionRoutes);
 app.use("/api/medicines", medicineRoutes);
-app.use("/api", aichatRoutes);
+app.use("/api/ai", aichatRoutes);
 app.get("/", (req, res) => {
-  logger.info("loll")
+  logger.info("loll");
   res.status(200).send("All ok");
 });
 

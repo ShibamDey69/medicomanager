@@ -1,36 +1,59 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useCallback } from "react"
+import { useState, useCallback, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { AuthGuard } from "@/components/auth-guard"
-import { ArrowLeft, Upload, Camera, FileText, X, CheckCircle, Pill } from "lucide-react"
+import { ArrowLeft, Upload, FileText, X, CheckCircle, Pill } from "lucide-react"
 import { motion } from "framer-motion"
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
 
 export default function UploadPage() {
   const router = useRouter()
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploadedFile, setUploadedFile] = useState<File | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string>("")
   const [isDragging, setIsDragging] = useState(false)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [uploadProgress, setUploadProgress] = useState<number>(0)
+
+  // Get user ID from localStorage
+  const getUserId = (): string | null => {
+    if (typeof window === "undefined") return null
+    const authData = localStorage.getItem("medico_auth")
+    if (!authData) return null
+    try {
+      const parsed = JSON.parse(authData)
+      return parsed.userId || null
+    } catch {
+      return null
+    }
+  }
 
   const handleFileSelect = useCallback((file: File) => {
-    if (file && (file.type.startsWith("image/") || file.type === "application/pdf")) {
-      setUploadedFile(file)
+    // Check file size (10MB limit)
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File size exceeds 10MB limit")
+      return
+    }
 
-      if (file.type.startsWith("image/")) {
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          setPreviewUrl(e.target?.result as string)
-        }
-        reader.readAsDataURL(file)
-      } else {
-        setPreviewUrl("/pdf-document.png")
+    // Accept any image format
+    if (file.type.startsWith("image/")) {
+      setUploadedFile(file)
+      setError(null)
+
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        setPreviewUrl(e.target?.result as string)
       }
+      reader.readAsDataURL(file)
+    } else {
+      setError("Please select an image file")
     }
   }, [])
 
@@ -64,38 +87,82 @@ export default function UploadPage() {
     }
   }
 
-  const handleCameraCapture = () => {
-    // Mock camera capture - in real app would use camera API
-    const mockImageFile = new File(["mock"], "camera-capture.jpg", { type: "image/jpeg" })
-    setUploadedFile(mockImageFile)
-    setPreviewUrl("/prescription-document-from-camera.jpg")
-  }
-
   const handleExtract = async () => {
     if (!uploadedFile) return
 
     setIsProcessing(true)
+    setError(null)
+    setUploadProgress(0)
 
-    // Mock processing delay
-    setTimeout(() => {
-      // Store the uploaded file data for the extraction review page
-      const fileData = {
-        name: uploadedFile.name,
-        size: uploadedFile.size,
-        type: uploadedFile.type,
-        previewUrl: previewUrl,
-        uploadDate: new Date().toISOString(),
+    const userId = getUserId()
+    if (!userId) {
+      setError("User not authenticated. Please log in again.")
+      setIsProcessing(false)
+      return
+    }
+
+    try {
+      // Convert file to ArrayBuffer
+      const arrayBuffer = await uploadedFile.arrayBuffer()
+      
+      // Create FormData
+      const formData = new FormData()
+      const blob = new Blob([arrayBuffer], { type: uploadedFile.type })
+      formData.append("image", blob, uploadedFile.name)
+      
+      // Add doctor info (optional, can be extracted from image)
+      formData.append("doctorInfo", JSON.stringify({ 
+        name: "To be extracted", 
+        specialty: "To be extracted" 
+      }))
+
+      // Upload to API
+      const response = await fetch(`${API_BASE_URL}/prescriptions/extract/${userId}`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      })
+
+      if (!response.ok) {
+        throw new Error(`Failed to upload prescription: ${response.status}`)
       }
 
-      localStorage.setItem("medico_uploaded_prescription", JSON.stringify(fileData))
+      const data = await response.json()
+      
+      if (data && data.data) {
+        // Save the uploaded file data for the extraction review page
+        const fileData = {
+          name: uploadedFile.name,
+          size: uploadedFile.size,
+          type: uploadedFile.type,
+          previewUrl: previewUrl,
+          uploadDate: new Date().toISOString(),
+          jobId: data.data.jobId,
+          status: data.data.status,
+        }
+
+        // Store in localStorage for extraction review page
+        localStorage.setItem("medico_uploaded_prescription", JSON.stringify(fileData))
+        
+        // Redirect to extraction review page
+        router.push("/extraction-review")
+      }
+    } catch (err: any) {
+      console.error("Error uploading prescription:", err)
+      setError(err.message || "Failed to upload prescription")
       setIsProcessing(false)
-      router.push("/extraction-review")
-    }, 2000)
+    }
   }
 
   const removeFile = () => {
     setUploadedFile(null)
     setPreviewUrl("")
+    setError(null)
+    setUploadProgress(0)
+  }
+
+  const triggerFileInput = () => {
+    fileInputRef.current?.click()
   }
 
   return (
@@ -204,10 +271,10 @@ export default function UploadPage() {
 
               {/* Responsive Title */}
               <span className="font-semibold text-foreground hidden sm:inline">
-                Prescription Details
+                Upload Prescription
               </span>
               <span className="font-semibold text-foreground sm:hidden text-sm">
-                Details
+                Upload
               </span>
             </motion.div>
 
@@ -235,7 +302,7 @@ export default function UploadPage() {
               <CardHeader className="text-center">
                 <CardTitle className="text-2xl">Upload Your Prescription</CardTitle>
                 <CardDescription className="text-base">
-                  Upload a photo or PDF of your prescription to extract medication details
+                  Upload a photo of your prescription to extract medication details
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -254,41 +321,40 @@ export default function UploadPage() {
                     </div>
                     <div>
                       <p className="text-lg font-medium text-foreground mb-2">Drag and drop your prescription here</p>
-                      <p className="text-muted-foreground">Supports JPG, PNG, and PDF files up to 10MB</p>
+                      <p className="text-muted-foreground">Supports all image formats up to 10MB</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Upload Options */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div>
                     <input
+                      ref={fileInputRef}
                       type="file"
                       id="file-upload"
-                      accept="image/*,.pdf"
+                      accept="image/*"
                       onChange={handleFileInput}
                       className="hidden"
                     />
-                    <label htmlFor="file-upload">
-                      <Button variant="outline" size="lg" className="w-full py-6 rounded-2xl bg-transparent" asChild>
-                        <div className="flex items-center space-x-2 cursor-pointer">
-                          <FileText className="w-5 h-5" />
-                          <span>Choose File</span>
-                        </div>
-                      </Button>
-                    </label>
+                    <Button 
+                      variant="outline" 
+                      size="lg" 
+                      className="w-full py-6 rounded-2xl bg-transparent"
+                      onClick={triggerFileInput}
+                    >
+                      <FileText className="w-5 h-5 mr-2" />
+                      Choose Image File
+                    </Button>
                   </div>
-
-                  <Button
-                    variant="outline"
-                    size="lg"
-                    onClick={handleCameraCapture}
-                    className="py-6 rounded-2xl bg-transparent"
-                  >
-                    <Camera className="w-5 h-5 mr-2" />
-                    Take Photo
-                  </Button>
                 </div>
+
+                {/* Error Message */}
+                {error && (
+                  <div className="bg-destructive/10 text-destructive p-4 rounded-2xl border border-destructive/20">
+                    <p className="text-sm font-medium">{error}</p>
+                  </div>
+                )}
 
                 {/* Tips */}
                 <div className="bg-muted/30 p-4 rounded-2xl">
@@ -298,6 +364,7 @@ export default function UploadPage() {
                     <li>• Avoid shadows and reflections</li>
                     <li>• Include the entire prescription in the frame</li>
                     <li>• Make sure text is not blurry or cut off</li>
+                    <li>• Maximum file size: 10MB</li>
                   </ul>
                 </div>
               </CardContent>
@@ -377,7 +444,7 @@ export default function UploadPage() {
                           {isProcessing ? (
                             <div className="flex items-center space-x-2">
                               <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-                              <span>Extracting Data...</span>
+                              <span>Processing Prescription...</span>
                             </div>
                           ) : (
                             "Extract Prescription Data"
@@ -392,6 +459,13 @@ export default function UploadPage() {
                           Upload Different File
                         </Button>
                       </div>
+
+                      {/* Error Message */}
+                      {error && (
+                        <div className="bg-destructive/10 text-destructive p-4 rounded-2xl border border-destructive/20">
+                          <p className="text-sm font-medium">{error}</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </CardContent>

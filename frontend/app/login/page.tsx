@@ -1,331 +1,359 @@
-"use client";
+"use client"
 
-import type React from "react";
-import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { ArrowLeft, Phone, Shield } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { 
-  RecaptchaVerifier, 
-  signInWithPhoneNumber, 
-  ConfirmationResult,
-  User
-} from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import type React from "react"
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { ArrowLeft, Phone, Shield } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
+import { RecaptchaVerifier, signInWithPhoneNumber, type ConfirmationResult, type User } from "firebase/auth"
+import { auth } from "@/lib/firebase"
+
+// Backend API configuration
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
 
 const triggerHaptic = () => {
   if (typeof window !== "undefined" && "vibrate" in navigator) {
-    navigator.vibrate(50);
+    navigator.vibrate(50)
   }
-};
+}
+
+// Backend authentication function
+const authenticateWithBackend = async (idToken: string) => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/users/login`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ idToken }),
+      credentials: "include",
+    })
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      throw new Error(errorData.message || `Backend authentication failed: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    return {
+      success: true,
+      data: data.data,
+      hasProfile: !!data.data.user, // Check if user profile exists
+    }
+  } catch (error) {
+    console.error("Backend authentication error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Backend authentication failed",
+    }
+  }
+}
 
 export default function LoginPage() {
-  const router = useRouter();
-  const [step, setStep] = useState<"phone" | "otp">("phone");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
+  const router = useRouter()
+  const [step, setStep] = useState<"phone" | "otp">("phone")
+  const [phoneNumber, setPhoneNumber] = useState("")
+  const [otp, setOtp] = useState(["", "", "", "", "", ""])
+  const [error, setError] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null)
+  const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null)
 
   // Initialize reCAPTCHA
   useEffect(() => {
-    if (typeof window !== 'undefined' && !recaptchaVerifier) {
+    if (typeof window !== "undefined" && !recaptchaVerifier) {
       try {
-        const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible',
+        const verifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible",
           callback: () => {
-            console.log('reCAPTCHA solved');
+            console.log("reCAPTCHA solved")
           },
-          'expired-callback': () => {
-            setError('reCAPTCHA expired. Please try again.');
-          }
-        });
-        setRecaptchaVerifier(verifier);
+          "expired-callback": () => {
+            setError("reCAPTCHA expired. Please try again.")
+          },
+        })
+        setRecaptchaVerifier(verifier)
       } catch (error) {
-        console.error('Error initializing reCAPTCHA:', error);
-        setError('Failed to initialize verification. Please refresh the page.');
+        console.error("Error initializing reCAPTCHA:", error)
+        setError("Failed to initialize verification. Please refresh the page.")
       }
     }
 
     return () => {
       if (recaptchaVerifier) {
         try {
-          recaptchaVerifier.clear();
+          recaptchaVerifier.clear()
         } catch (error) {
-          console.error('Error clearing reCAPTCHA:', error);
+          console.error("Error clearing reCAPTCHA:", error)
         }
       }
-    };
-  }, [recaptchaVerifier]);
+    }
+  }, [recaptchaVerifier])
 
   const formatPhoneNumber = (phone: string) => {
     // Remove all non-digits
-    const digits = phone.replace(/\D/g, '');
-    
+    const digits = phone.replace(/\D/g, "")
+
     // Handle Indian phone numbers
     if (digits.length === 10) {
-      return `+91${digits}`;
-    } else if (digits.length === 12 && digits.startsWith('91')) {
-      return `+${digits}`;
-    } else if (digits.startsWith('91') && digits.length === 12) {
-      return `+${digits}`;
+      return `+91${digits}`
+    } else if (digits.length === 12 && digits.startsWith("91")) {
+      return `+${digits}`
+    } else if (digits.startsWith("91") && digits.length === 12) {
+      return `+${digits}`
     }
-    
+
     // If already formatted correctly
-    if (phone.startsWith('+91') && phone.length === 13) {
-      return phone;
+    if (phone.startsWith("+91") && phone.length === 13) {
+      return phone
     }
-    
+
     // Default fallback
-    return `+91${digits.slice(-10)}`;
-  };
+    return `+91${digits.slice(-10)}`
+  }
 
   const validatePhoneNumber = (phone: string) => {
-    const digits = phone.replace(/\D/g, '');
-    return digits.length === 10 && /^[6-9]/.test(digits); // Indian mobile numbers start with 6,7,8,9
-  };
+    const digits = phone.replace(/\D/g, "")
+    return digits.length === 10 && /^[6-9]/.test(digits) // Indian mobile numbers start with 6,7,8,9
+  }
 
   const handlePhoneSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    triggerHaptic();
+    e.preventDefault()
+    setError("")
+    triggerHaptic()
 
     if (!validatePhoneNumber(phoneNumber)) {
-      setError("Please enter a valid 10-digit mobile number");
-      return;
+      setError("Please enter a valid 10-digit mobile number")
+      return
     }
 
     if (!recaptchaVerifier) {
-      setError("Verification system not ready. Please refresh the page.");
-      return;
+      setError("Verification system not ready. Please refresh the page.")
+      return
     }
 
-    setIsLoading(true);
+    setIsLoading(true)
 
     try {
-      const formattedPhone = formatPhoneNumber(phoneNumber);
-      console.log('Sending OTP to:', formattedPhone);
-      
-      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
-      setConfirmationResult(confirmation);
-      setStep("otp");
-      setError("");
-      console.log('OTP sent successfully');
+      const formattedPhone = formatPhoneNumber(phoneNumber)
+      console.log("Sending OTP to:", formattedPhone)
+
+      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier)
+      setConfirmationResult(confirmation)
+      setStep("otp")
+      setError("")
+      console.log("OTP sent successfully")
     } catch (error: any) {
-      console.error('Phone verification error:', error);
-      
-      let errorMessage = 'Failed to send verification code. Please try again.';
-      
+      console.error("Phone verification error:", error)
+
+      let errorMessage = "Failed to send verification code. Please try again."
+
       switch (error.code) {
-        case 'auth/invalid-phone-number':
-          errorMessage = 'Invalid phone number format. Please check and try again.';
-          break;
-        case 'auth/too-many-requests':
-          errorMessage = 'Too many requests. Please try again after some time.';
-          break;
-        case 'auth/quota-exceeded':
-          errorMessage = 'SMS quota exceeded. Please try again tomorrow.';
-          break;
-        case 'auth/app-not-authorized':
-          errorMessage = 'App not authorized for phone authentication.';
-          break;
-        case 'auth/captcha-check-failed':
-          errorMessage = 'Captcha verification failed. Please try again.';
-          break;
+        case "auth/invalid-phone-number":
+          errorMessage = "Invalid phone number format. Please check and try again."
+          break
+        case "auth/too-many-requests":
+          errorMessage = "Too many requests. Please try again after some time."
+          break
+        case "auth/quota-exceeded":
+          errorMessage = "SMS quota exceeded. Please try again tomorrow."
+          break
+        case "auth/app-not-authorized":
+          errorMessage = "App not authorized for phone authentication."
+          break
+        case "auth/captcha-check-failed":
+          errorMessage = "Captcha verification failed. Please try again."
+          break
         default:
-          errorMessage = error.message || errorMessage;
+          errorMessage = error.message || errorMessage
       }
-      
-      setError(errorMessage);
-      
+
+      setError(errorMessage)
+
       // Recreate reCAPTCHA verifier on error
       try {
         if (recaptchaVerifier) {
-          recaptchaVerifier.clear();
+          recaptchaVerifier.clear()
         }
-        const newVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-          size: 'invisible',
+        const newVerifier = new RecaptchaVerifier(auth, "recaptcha-container", {
+          size: "invisible",
           callback: () => {
-            console.log('reCAPTCHA solved');
+            console.log("reCAPTCHA solved")
           },
-          'expired-callback': () => {
-            setError('reCAPTCHA expired. Please try again.');
-          }
-        });
-        setRecaptchaVerifier(newVerifier);
+          "expired-callback": () => {
+            setError("reCAPTCHA expired. Please try again.")
+          },
+        })
+        setRecaptchaVerifier(newVerifier)
       } catch (recaptchaError) {
-        console.error('Error recreating reCAPTCHA:', recaptchaError);
+        console.error("Error recreating reCAPTCHA:", recaptchaError)
       }
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
-    triggerHaptic();
+    e.preventDefault()
+    setError("")
+    triggerHaptic()
 
-    const otpString = otp.join("");
+    const otpString = otp.join("")
     if (otpString.length !== 6) {
-      setError("Please enter the complete 6-digit code");
-      return;
+      setError("Please enter the complete 6-digit code")
+      return
     }
 
     if (!confirmationResult) {
-      setError("No confirmation result found. Please try sending the code again.");
-      return;
+      setError("No confirmation result found. Please try sending the code again.")
+      return
     }
 
-    setIsLoading(true);
+    setIsLoading(true)
 
     try {
-      const result = await confirmationResult.confirm(otpString);
-      const user: User = result.user;
-      
-      const idToken = await user.getIdToken();
-      // Optional: Verify token with your backend
-      // Uncomment and modify this section when you have your backend ready
-      /*
-      const response = await fetch('/api/auth/verify-token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          idToken,
-          uid: user.uid,
-          phoneNumber: user.phoneNumber,
-        }),
-      });
+      // Step 1: Verify OTP with Firebase
+      const result = await confirmationResult.confirm(otpString)
+      const user: User = result.user
 
-      if (!response.ok) {
-        throw new Error('Backend verification failed');
+      // Step 2: Get Firebase ID token
+      const idToken = await user.getIdToken()
+console.log("Firebase ID Token:", idToken)
+      // Step 3: Authenticate with your backend
+      const backendResult = await authenticateWithBackend(idToken)
+
+      if (!backendResult.success) {
+        throw new Error(backendResult.error || "Backend authentication failed")
       }
-      */
-      localStorage.setItem("medico_auth", JSON.stringify({
-        phone: user.phoneNumber,
-        authenticated: true,
-        timestamp: Date.now()
-      }));
-      // For now, we'll proceed without backend verification
-      console.log(idToken);
-      router.push("/profile-setup");
-      
+
+      // Step 4: Store auth data locally
+      localStorage.setItem(
+        "medico_auth",
+        JSON.stringify({
+          phone: user.phoneNumber,
+          authenticated: true,
+          timestamp: Date.now(),
+          userId: backendResult.data.userId,
+          hasProfile: backendResult.hasProfile,
+        }),
+      )
+
+      const { DOB, gender, bloodGroup, name } = backendResult.data.user
+      // Step 5: Navigate based on profile status
+      if (DOB && gender && bloodGroup && name) {
+        router.push("/dashboard")
+      } else {
+        router.push("/profile-setup")
+      }
     } catch (error: any) {
-      console.error('OTP verification error:', error);
-      
-      let errorMessage = 'Verification failed. Please try again.';
-      
+      console.error("Authentication error:", error)
+
+      let errorMessage = "Verification failed. Please try again."
+
+      // Handle Firebase errors
       switch (error.code) {
-        case 'auth/invalid-verification-code':
-          errorMessage = 'Invalid verification code. Please check and try again.';
-          break;
-        case 'auth/code-expired':
-          errorMessage = 'Verification code has expired. Please request a new one.';
-          setStep('phone'); // Go back to phone step
-          break;
-        case 'auth/session-expired':
-          errorMessage = 'Session expired. Please start over.';
-          setStep('phone');
-          break;
+        case "auth/invalid-verification-code":
+          errorMessage = "Invalid verification code. Please check and try again."
+          break
+        case "auth/code-expired":
+          errorMessage = "Verification code has expired. Please request a new one."
+          setStep("phone") // Go back to phone step
+          break
+        case "auth/session-expired":
+          errorMessage = "Session expired. Please start over."
+          setStep("phone")
+          break
         default:
-          errorMessage = error.message || errorMessage;
+          // Handle backend errors or other errors
+          errorMessage = error.message || errorMessage
       }
-      
-      setError(errorMessage);
-      
-      // Clear OTP inputs on error
-      if (error.code !== 'auth/code-expired' && error.code !== 'auth/session-expired') {
-        setOtp(["", "", "", "", "", ""]);
+
+      setError(errorMessage)
+
+      // Clear OTP inputs on error (except for expired codes)
+      if (error.code !== "auth/code-expired" && error.code !== "auth/session-expired") {
+        setOtp(["", "", "", "", "", ""])
       }
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, '');
+    const value = e.target.value.replace(/\D/g, "")
     if (value.length <= 10) {
-      setPhoneNumber(value);
-      setError("");
+      setPhoneNumber(value)
+      setError("")
     }
-  };
+  }
 
   const handleOtpChange = (index: number, value: string) => {
-    if (value.length > 1) return;
+    if (value.length > 1) return
 
-    const newOtp = [...otp];
-    newOtp[index] = value.replace(/\D/g, '');
-    setOtp(newOtp);
-    setError("");
+    const newOtp = [...otp]
+    newOtp[index] = value.replace(/\D/g, "")
+    setOtp(newOtp)
+    setError("")
 
     // Auto-focus next input
     if (value && index < 5) {
-      const nextInput = document.getElementById(`otp-${index + 1}`);
-      nextInput?.focus();
+      const nextInput = document.getElementById(`otp-${index + 1}`)
+      nextInput?.focus()
     }
-  };
+  }
 
   const handleOtpKeyDown = (index: number, e: React.KeyboardEvent) => {
     if (e.key === "Backspace" && !otp[index] && index > 0) {
-      const prevInput = document.getElementById(`otp-${index - 1}`);
-      prevInput?.focus();
+      const prevInput = document.getElementById(`otp-${index - 1}`)
+      prevInput?.focus()
     }
-  };
+  }
 
   const handleResendOTP = async () => {
     if (!recaptchaVerifier) {
-      setError("Verification system not ready. Please refresh the page.");
-      return;
+      setError("Verification system not ready. Please refresh the page.")
+      return
     }
-    
-    triggerHaptic();
-    setError("");
-    setIsLoading(true);
+
+    triggerHaptic()
+    setError("")
+    setIsLoading(true)
 
     try {
-      const formattedPhone = formatPhoneNumber(phoneNumber);
-      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
-      setConfirmationResult(confirmation);
-      setOtp(["", "", "", "", "", ""]);
-      console.log('OTP resent successfully');
+      const formattedPhone = formatPhoneNumber(phoneNumber)
+      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier)
+      setConfirmationResult(confirmation)
+      setOtp(["", "", "", "", "", ""])
+      console.log("OTP resent successfully")
     } catch (error: any) {
-      console.error('Resend OTP error:', error);
-      setError("Failed to resend code. Please try again.");
+      console.error("Resend OTP error:", error)
+      setError("Failed to resend code. Please try again.")
     } finally {
-      setIsLoading(false);
+      setIsLoading(false)
     }
-  };
+  }
 
   const handleBackButton = () => {
-    triggerHaptic();
+    triggerHaptic()
     if (step === "otp") {
-      setStep("phone");
-      setOtp(["", "", "", "", "", ""]);
-      setError("");
+      setStep("phone")
+      setOtp(["", "", "", "", "", ""])
+      setError("")
     } else {
-      router.push("/landing");
+      router.push("/landing")
     }
-  };
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-accent/5">
       {/* reCAPTCHA container */}
       <div id="recaptcha-container"></div>
-      
+
       {/* Header */}
       <motion.header
         initial={{ y: -100, opacity: 0 }}
@@ -342,7 +370,7 @@ export default function LoginPage() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          
+
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -363,7 +391,7 @@ export default function LoginPage() {
                 }}
                 transition={{
                   duration: 4,
-                  repeat: Infinity,
+                  repeat: Number.POSITIVE_INFINITY,
                   ease: "easeInOut",
                 }}
                 className="relative w-12 h-12"
@@ -376,11 +404,24 @@ export default function LoginPage() {
                       rotateY: [0, 180, 360],
                     }}
                     transition={{
-                      scale: { duration: 3, repeat: Infinity, ease: "easeInOut" },
-                      rotateY: { duration: 4, repeat: Infinity, ease: "linear" },
+                      scale: {
+                        duration: 3,
+                        repeat: Number.POSITIVE_INFINITY,
+                        ease: "easeInOut",
+                      },
+                      rotateY: {
+                        duration: 4,
+                        repeat: Number.POSITIVE_INFINITY,
+                        ease: "linear",
+                      },
                     }}
                   >
-                    <svg className="w-6 h-6 text-primary-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg
+                      className="w-6 h-6 text-primary-foreground"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -394,7 +435,7 @@ export default function LoginPage() {
                 {/* Orbiting elements */}
                 <motion.div
                   animate={{ rotate: 360 }}
-                  transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+                  transition={{ duration: 8, repeat: Number.POSITIVE_INFINITY, ease: "linear" }}
                   className="absolute inset-0"
                 >
                   <div className="absolute -top-1 left-1/2 w-2 h-2 bg-green-500 rounded-full shadow-md shadow-green-500/50 transform -translate-x-1/2" />
@@ -402,7 +443,11 @@ export default function LoginPage() {
 
                 <motion.div
                   animate={{ rotate: -360 }}
-                  transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
+                  transition={{
+                    duration: 10,
+                    repeat: Number.POSITIVE_INFINITY,
+                    ease: "linear",
+                  }}
                   className="absolute inset-0"
                 >
                   <div className="absolute top-1/2 -right-1 w-1.5 h-1.5 bg-blue-500 rounded-full shadow-md shadow-blue-500/50 transform -translate-y-1/2" />
@@ -416,7 +461,7 @@ export default function LoginPage() {
                   }}
                   transition={{
                     duration: 2,
-                    repeat: Infinity,
+                    repeat: Number.POSITIVE_INFINITY,
                     ease: "easeOut",
                   }}
                   className="absolute -inset-2 border border-primary/20 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
@@ -447,20 +492,18 @@ export default function LoginPage() {
                   }}
                   transition={{
                     duration: 2,
-                    repeat: Infinity,
+                    repeat: Number.POSITIVE_INFINITY,
                     ease: "easeInOut",
                   }}
                   className="flex items-center space-x-1"
                 >
                   <div className="w-2 h-2 bg-primary rounded-full" />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    Authentication
-                  </span>
+                  <span className="text-xs font-medium text-muted-foreground">Authentication</span>
                 </motion.div>
               </motion.div>
             </div>
           </motion.div>
-          
+
           <motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -505,10 +548,7 @@ export default function LoginPage() {
                   className="space-y-4"
                 >
                   <div className="space-y-2">
-                    <label
-                      htmlFor="phone"
-                      className="text-sm font-medium text-foreground"
-                    >
+                    <label htmlFor="phone" className="text-sm font-medium text-foreground">
                       Phone Number
                     </label>
                     <div className="relative">
@@ -564,9 +604,7 @@ export default function LoginPage() {
                   className="space-y-4"
                 >
                   <div className="space-y-2">
-                    <label className="text-sm font-medium text-foreground">
-                      Verification Code
-                    </label>
+                    <label className="text-sm font-medium text-foreground">Verification Code</label>
                     <div className="flex justify-center space-x-2">
                       {otp.map((digit, index) => (
                         <Input
@@ -576,12 +614,7 @@ export default function LoginPage() {
                           inputMode="numeric"
                           maxLength={1}
                           value={digit}
-                          onChange={(e) =>
-                            handleOtpChange(
-                              index,
-                              e.target.value.replace(/\D/g, "")
-                            )
-                          }
+                          onChange={(e) => handleOtpChange(index, e.target.value.replace(/\D/g, ""))}
                           onKeyDown={(e) => handleOtpKeyDown(index, e)}
                           className="w-12 h-12 text-center text-lg font-semibold rounded-xl border-2 focus:border-primary"
                           autoComplete="one-time-code"
@@ -636,5 +669,5 @@ export default function LoginPage() {
         </Card>
       </div>
     </div>
-  );
+  )
 }

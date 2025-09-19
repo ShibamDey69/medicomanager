@@ -107,7 +107,7 @@ Important Guidelines:
 - Keep responses clear and jargon-free
 - Consider current medications in your advice
 
-Response:
+Response should be as much cconsice as u can and to the point. Response in less than 200 words. Response:
 `;
   }
 

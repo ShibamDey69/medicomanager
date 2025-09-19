@@ -25,10 +25,16 @@ export function useAuth() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [user, setUser] = useState<AuthState | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    checkAuth();
-    loadProfile();
+    const initializeAuth = async () => {
+      setIsLoading(true);
+      checkAuth();
+      loadProfile();
+      setIsLoading(false);
+    };
+    initializeAuth();
   }, []);
 
   const checkAuth = () => {
@@ -88,6 +94,8 @@ export function useAuth() {
     isAuthenticated,
     user,
     profile,
+    hasProfile: !!profile,
+    isLoading,
     updateProfile,
     logout,
     checkAuth,

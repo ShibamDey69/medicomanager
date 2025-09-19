@@ -25,117 +25,13 @@ interface Message {
   timestamp: Date;
 }
 
-const mockAIResponses = [
-  {
-    keywords: ["lisinopril", "blood pressure", "ace inhibitor"],
-    response: `**Lisinopril (ACE Inhibitor)**
-
-Lisinopril is a prescription medication in the ACE inhibitor class, primarily used for cardiovascular conditions.
-
-**Primary Indications:**
-• Hypertension (high blood pressure)
-• Heart failure management
-• Post-myocardial infarction therapy
-• Diabetic nephropathy protection
-
-**Mechanism of Action:**
-Blocks angiotensin-converting enzyme, reducing vasoconstriction and aldosterone secretion, resulting in decreased blood pressure and reduced cardiac workload.
-
-**Common Adverse Effects:**
-• Dry, persistent cough (10-15% of patients)
-• Hypotension, especially orthostatic
-• Hyperkalemia (elevated potassium)
-• Angioedema (rare but serious)
-• Fatigue and dizziness
-
-**Clinical Considerations:**
-• Monitor renal function and electrolytes regularly
-• Contraindicated in pregnancy
-• Avoid potassium supplements unless specifically prescribed
-• Do not discontinue abruptly
-
-**Important:** This information is for educational purposes only. Consult your healthcare provider for personalized medical advice and dosage adjustments.`,
-  },
-  {
-    keywords: ["metformin", "diabetes", "blood sugar", "glucose"],
-    response: `**Metformin (Biguanide Antidiabetic)**
-
-Metformin is the first-line oral antidiabetic medication for type 2 diabetes mellitus management.
-
-**Primary Mechanisms:**
-• Decreases hepatic glucose production
-• Enhances peripheral glucose uptake
-• Improves insulin sensitivity
-• Does not cause hypoglycemia when used alone
-
-**Clinical Benefits:**
-• HbA1c reduction of 1-2%
-• Potential cardiovascular benefits
-• Weight-neutral or modest weight loss
-• Established safety profile
-
-**Common Side Effects:**
-• Gastrointestinal: nausea, diarrhea, abdominal discomfort
-• Metallic taste (temporary)
-• Vitamin B12 deficiency with long-term use
-• Lactic acidosis (rare but serious)
-
-**Administration Guidelines:**
-• Take with meals to minimize GI upset
-• Start with low dose, titrate gradually
-• Extended-release formulations available
-• Regular monitoring of renal function required
-
-**Contraindications:**
-• Severe renal impairment (eGFR <30)
-• Acute or chronic metabolic acidosis
-• Severe hepatic impairment
-
-**Clinical Note:** Regular follow-up with healthcare providers is essential for optimal diabetes management and monitoring.`,
-  },
-  {
-    keywords: [
-      "drug interaction",
-      "medication interaction",
-      "mixing medications",
-      "polypharmacy",
-    ],
-    response: `**Medication Interactions: Clinical Overview**
-
-Drug interactions represent a significant clinical concern, particularly in polypharmacy situations.
-
-**Types of Interactions:**
-
-**1. Pharmacokinetic Interactions:**
-• Absorption: Drug A affects Drug B absorption
-• Distribution: Competition for protein binding sites
-• Metabolism: CYP enzyme inhibition/induction
-• Elimination: Renal clearance competition
-
-**2. Pharmacodynamic Interactions:**
-• Synergistic effects (enhanced efficacy/toxicity)
-• Antagonistic effects (reduced efficacy)
-• Additive effects (combined similar actions)
-
-**High-Risk Combinations:**
-• Anticoagulants + NSAIDs (bleeding risk)
-• ACE inhibitors + potassium supplements (hyperkalemia)
-• Sedatives + alcohol (respiratory depression)
-• MAOIs + SSRIs (serotonin syndrome)
-
-**Risk Mitigation Strategies:**
-• Maintain comprehensive medication lists
-• Use single pharmacy when possible
-• Regular medication reviews with healthcare providers
-• Monitor for new symptoms after medication changes
-• Consider therapeutic drug monitoring when indicated
-
-**Clinical Assessment:**
-Healthcare providers should evaluate drug interactions considering patient-specific factors including age, renal function, hepatic function, and overall health status.
-
-**Professional Guidance Required:** Never adjust medications without consulting your healthcare provider or pharmacist.`,
-  },
-];
+interface AuthData {
+  phone: string;
+  authenticated: boolean;
+  timestamp: number;
+  userId: string;
+  hasProfile: boolean;
+}
 
 const quickQuestions = [
   "What are the side effects of my blood pressure medication?",
@@ -145,6 +41,9 @@ const quickQuestions = [
   "How long does it take for my medication to work?",
   "What are the signs of an allergic reaction?",
 ];
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
 
 export default function ChatPage() {
   const router = useRouter();
@@ -178,6 +77,8 @@ How may I assist you today?`,
   const [inputValue, setInputValue] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [showQuickQuestions, setShowQuickQuestions] = useState(true);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [pollingAttempts, setPollingAttempts] = useState(0); // For debugging
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -188,118 +89,132 @@ How may I assist you today?`,
     scrollToBottom();
   }, [messages]);
 
-  const generateAIResponse = (userMessage: string): string => {
-    const lowerMessage = userMessage.toLowerCase();
+  useEffect(() => {
+    if (!jobId || !isTyping) return;
 
-    // Find matching response based on keywords
-    const matchedResponse = mockAIResponses.find((response) =>
-      response.keywords.some((keyword) => lowerMessage.includes(keyword))
-    );
+    console.log("Starting polling for jobId:", jobId);
+    setPollingAttempts(0);
 
-    if (matchedResponse) {
-      return matchedResponse.response;
+    const pollInterval = setInterval(async () => {
+      setPollingAttempts((prev) => prev + 1);
+      console.log(
+        `Polling attempt #${pollingAttempts + 1} for jobId: ${jobId}`
+      );
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/ai/answer/${jobId}`, {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+        });
+
+        console.log("Response status:", response.status);
+
+        if (!response.ok) {
+          // Don't throw error - continue polling
+          console.log(`HTTP error ${response.status}, continuing to poll...`);
+          return;
+        }
+
+        const {data} = await response.json();
+        console.log("Received data:", data);
+
+        if (
+          data.status === "processing" ||
+          data.status === "pending" ||
+          data.status === "running"
+        ) {
+          console.log("Still processing, continuing to poll...");
+          // Still processing, continue polling
+          return;
+        }
+
+        // Check for completed/finished/success status
+        if (
+          data.status === "completed" ||
+          data.status === "finished" ||
+          data.status === "success"
+        ) {
+          console.log("Got final answer:", data);
+          clearInterval(pollInterval);
+
+          const aiMessage: Message = {
+            id: `ai-${Date.now()}`,
+            type: "ai",
+            content:
+              data.answer ||
+              data.message ||
+              data.result ||
+              "I couldn't generate a response at this time. Please try again later.",
+            timestamp: new Date(),
+          };
+
+          setMessages((prev) => [...prev, aiMessage]);
+          setIsTyping(false);
+          setJobId(null);
+          setPollingAttempts(0);
+          return;
+        }
+
+        // If we get here, it's some other status - treat as completed but with potential error message
+        console.log(
+          "Got unexpected status, treating as completed:",
+          data.status
+        );
+        clearInterval(pollInterval);
+
+        const aiMessage: Message = {
+          id: `ai-${Date.now()}`,
+          type: "ai",
+          content:
+            data.answer ||
+            data.message ||
+            data.result ||
+            data.error ||
+            "I couldn't generate a response at this time. Please try again later.",
+          timestamp: new Date(),
+        };
+
+        setMessages((prev) => [...prev, aiMessage]);
+        setIsTyping(false);
+        setJobId(null);
+        setPollingAttempts(0);
+      } catch (error) {
+        console.error(
+          "Error fetching AI answer (will continue polling):",
+          error
+        );
+        
+      }
+    }, 2000); // Poll every 2 seconds
+
+    
+    return () => {
+      console.log("Cleaning up polling interval");
+      clearInterval(pollInterval);
+    };
+  }, [jobId, isTyping, pollingAttempts]);
+  const getUserIdFromLocalStorage = (): string | null => {
+    try {
+      const authDataStr = localStorage.getItem("medico_auth");
+      if (!authDataStr) {
+        return null;
+      }
+
+      const authData: AuthData = JSON.parse(authDataStr);
+
+      // Verify the data has what we need
+      if (authData && authData.userId && authData.authenticated) {
+        return authData.userId;
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error getting user ID from localStorage:", error);
+      return null;
     }
-
-    // Default responses for common question patterns
-    if (lowerMessage.includes("side effect")) {
-      return `**Medication Side Effects: Clinical Framework**
-
-To provide accurate side effect information, please specify the medication name you're inquiring about.
-
-**General Side Effect Categories:**
-
-**Common (>10% incidence):**
-• Usually mild and often resolve with continued use
-• Include gastrointestinal upset, mild dizziness, or fatigue
-
-**Uncommon (1-10% incidence):**
-• May require monitoring or dose adjustment
-• Often manageable with supportive care
-
-**Rare (<1% incidence):**
-• Serious adverse reactions requiring immediate medical attention
-• May necessitate medication discontinuation
-
-**Assessment Protocol:**
-1. Document all symptoms with timing and severity
-2. Consider drug-drug interactions
-3. Evaluate dose-response relationships
-4. Review patient-specific risk factors
-
-**When to Seek Immediate Care:**
-• Allergic reactions (rash, swelling, breathing difficulty)
-• Severe or worsening symptoms
-• New neurological symptoms
-• Cardiovascular changes
-
-**Clinical Note:** Never discontinue prescribed medications without healthcare provider consultation. Please specify which medication you'd like detailed side effect information about.`;
-    }
-
-    if (lowerMessage.includes("dose") || lowerMessage.includes("dosage")) {
-      return `**Medication Dosing: Clinical Principles**
-
-**Fundamental Dosing Concepts:**
-
-**Therapeutic Range:**
-• Minimum effective dose for therapeutic benefit
-• Maximum safe dose before toxicity risk
-• Individual patient variability considerations
-
-**Dosing Factors:**
-• Age and weight
-• Renal and hepatic function
-• Drug interactions
-• Comorbid conditions
-• Genetic polymorphisms (pharmacogenomics)
-
-**Missed Dose Management:**
-• Take as soon as remembered if <50% of interval has passed
-• Skip if approaching next scheduled dose
-• Never double doses without specific guidance
-• Contact healthcare provider for clarification
-
-**Dose Adjustment Scenarios:**
-• Renal impairment: Often requires dose reduction
-• Hepatic impairment: May need dose modification
-• Drug interactions: May require dose adjustment
-• Therapeutic drug monitoring: Guided by blood levels
-
-**Clinical Monitoring:**
-• Regular follow-up appointments
-• Laboratory monitoring when indicated
-• Symptom assessment and documentation
-• Efficacy and tolerability evaluation
-
-For specific dosing information, please provide the medication name and your clinical context.`;
-    }
-
-    // Default response
-    return `**Clinical Information Request**
-
-I understand you're seeking medical information. For optimal assistance, please provide:
-
-**Specific Details:**
-• Medication name(s) or condition of interest
-• Your specific question or concern  
-• Relevant clinical context (if comfortable sharing)
-• Type of information needed (side effects, interactions, etc.)
-
-**Available Information Types:**
-• Evidence-based medication data
-• Drug interaction assessments
-• General clinical guidance
-• Safety considerations and contraindications
-
-**Important Reminders:**
-• This is educational information only
-• Individual medical situations vary significantly  
-• Healthcare provider consultation is essential for personalized care
-• Emergency situations require immediate medical attention
-
-**Professional Medical Care:**
-Please contact your healthcare provider, pharmacist, or emergency services for urgent medical concerns.
-
-How can I provide more specific clinical information to assist you?`;
   };
 
   const handleSendMessage = async (message: string) => {
@@ -317,19 +232,90 @@ How can I provide more specific clinical information to assist you?`;
     setIsTyping(true);
     setShowQuickQuestions(false);
 
-    // Simulate AI processing time
-    setTimeout(() => {
-      const aiResponse = generateAIResponse(message);
-      const aiMessage: Message = {
-        id: (Date.now() + 1).toString(),
+    try {
+      // Get user ID from localStorage
+      const userId = getUserIdFromLocalStorage();
+
+      if (!userId) {
+        throw new Error("User not authenticated. Please log in again.");
+      }
+
+      console.log("Sending question to backend:", message);
+      console.log("User ID:", userId);
+
+      // Send question to backend
+      const askResponse = await fetch(`${API_BASE_URL}/ai/ask/${userId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          question: message,
+        }),
+      });
+
+      console.log("Ask response status:", askResponse.status);
+
+      if (!askResponse.ok) {
+        const errorText = await askResponse.text();
+        console.error("Backend error response:", errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(
+            errorData.message || `HTTP error! status: ${askResponse.status}`
+          );
+        } catch (e) {
+          throw new Error(
+            `HTTP error! status: ${askResponse.status} - ${errorText}`
+          );
+        }
+      }
+
+      const askData = await askResponse.json();
+      console.log("Full ask response data:", askData);
+
+      // Handle different possible response structures
+      let extractedJobId = null;
+
+      // Try different possible locations for jobId
+      if (askData.jobId) {
+        extractedJobId = askData.jobId;
+      } else if (askData.data && askData.data.jobId) {
+        extractedJobId = askData.data.jobId;
+      } else if (askData.result && askData.result.jobId) {
+        extractedJobId = askData.result.jobId;
+      } else if (typeof askData === "string") {
+        // Sometimes the jobId might be returned directly as a string
+        extractedJobId = askData;
+      }
+
+      if (extractedJobId) {
+        console.log("Extracted jobId:", extractedJobId);
+        setJobId(extractedJobId);
+        // The polling effect will handle getting the answer
+      } else {
+        throw new Error(
+          "No jobId received from server. Response: " + JSON.stringify(askData)
+        );
+      }
+    } catch (error) {
+      console.error("Error sending message:", error);
+
+      // Add error message to chat
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
         type: "ai",
-        content: aiResponse,
+        content:
+          error instanceof Error
+            ? `Sorry, I encountered an error: ${error.message}`
+            : "Sorry, I'm having trouble connecting to the server. Please try again later.",
         timestamp: new Date(),
       };
 
-      setMessages((prev) => [...prev, aiMessage]);
+      setMessages((prev) => [...prev, errorMessage]);
       setIsTyping(false);
-    }, 2000 + Math.random() * 1500);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -588,6 +574,9 @@ How can I provide more specific clinical information to assist you?`;
                             </div>
                             <span className="text-xs sm:text-sm text-muted-foreground font-medium">
                               Analyzing your query...
+                              {jobId && ` (Job ID: ${jobId})`}
+                              {pollingAttempts > 0 &&
+                                ` (Attempt #${pollingAttempts})`}
                             </span>
                           </div>
                         </div>

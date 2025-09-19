@@ -1,13 +1,12 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { AuthGuard } from "@/components/auth-guard";
-import { useAuth } from "@/hooks/use-auth";
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { ThemeToggle } from "@/components/theme-toggle"
+import { AuthGuard } from "@/components/auth-guard"
 import {
   LogOut,
   Upload,
@@ -19,111 +18,290 @@ import {
   Pill,
   CheckCircle2,
   ArrowRight,
-  Bell,
   AlertTriangle,
   X,
   Plus,
-  Settings,
-} from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+} from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 
-// Mock data
-const mockRecentPrescriptions: any[] = [
-  {
-    id: "1",
-    doctor: "Dr. Sarah Johnson",
-    specialty: "Cardiologist",
-    date: "2024-01-15",
-    medicines: ["Lisinopril 10mg", "Metformin 500mg"],
-    status: "active",
-  },
-  {
-    id: "2",
-    doctor: "Dr. Michael Chen",
-    specialty: "General Practitioner",
-    date: "2024-01-10",
-    medicines: ["Amoxicillin 250mg", "Ibuprofen 400mg"],
-    status: "completed",
-  },
-  {
-    id: "3",
-    doctor: "Dr. Emily Davis",
-    specialty: "Endocrinologist",
-    date: "2024-01-08",
-    medicines: ["Atorvastatin 20mg"],
-    status: "active",
-  },
-];
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api"
 
-const mockActivePrescriptions: any[] = [
-  {
-    id: "1",
-    medicine: "Lisinopril 10mg",
-    dosage: "Once daily",
-    remaining: 25,
-    nextDose: "8:00 AM",
-    adherence: 95,
-  },
-  {
-    id: "3",
-    medicine: "Atorvastatin 20mg",
-    dosage: "Once daily at bedtime",
-    remaining: 18,
-    nextDose: "10:00 PM",
-    adherence: 88,
-  },
-];
-
-const mockNotifications: any[] = [
-  {
-    id: "1",
-    title: "Medication Reminder",
-    message: "Time to take your Lisinopril",
-    time: "2 hours ago",
-    read: false,
-    type: "reminder",
-  },
-  {
-    id: "2",
-    title: "Prescription Expiring",
-    message: "Your Atorvastatin prescription expires in 3 days",
-    time: "1 day ago",
-    read: false,
-    type: "warning",
-  },
-  {
-    id: "3",
-    title: "Lab Results Available",
-    message: "Your recent blood work results are ready",
-    time: "2 days ago",
-    read: true,
-    type: "info",
-  },
-];
-
+// Helper function for haptic feedback
 const triggerHaptic = () => {
   if (typeof window !== "undefined" && "vibrate" in navigator) {
-    navigator.vibrate(50);
+    navigator.vibrate(50)
   }
-};
+}
 
 export default function DashboardPage() {
-  const router = useRouter();
-  const { profile, logout } = useAuth();
-  const [notifications, setNotifications] = useState(mockNotifications);
-  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const router = useRouter()
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
+  const [activeMedicines, setActiveMedicines] = useState<any[]>([])
+  const [recentPrescriptions, setRecentPrescriptions] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [userName, setUserName] = useState<string>("")
+  const [userId, setUserId] = useState<string | null>(null)
 
-  const markAllAsRead = () => {
-    setNotifications((prev) => prev.map((notif) => ({ ...notif, read: true })));
-    triggerHaptic();
-  };
+  // Get user ID and phone from localStorage
+  const getAuthData = () => {
+    if (typeof window === "undefined") return { userId: null, phone: null }
+    const authData = localStorage.getItem("medico_auth")
+    if (!authData) return { userId: null, phone: null }
+    try {
+      const parsed = JSON.parse(authData)
+      return {
+        userId: parsed.userId || null,
+        phone: parsed.authenticated ? parsed.phone : null
+      }
+    } catch {
+      return { userId: null, phone: null }
+    }
+  }
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  // Fetch user profile to get name
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch user profile: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      if (data && data.data) {
+        setUserName(data.data.name || "User")
+        return data.data
+      }
+    } catch (err: any) {
+      console.error("Error fetching user profile:", err)
+      setError(err.message || "Failed to load user profile")
+    }
+  }
 
+  // Fetch all prescriptions for user
+  const fetchAllPrescriptions = async (userId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/prescriptions/user/${userId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      })
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return []
+        }
+        throw new Error(`Failed to fetch prescriptions: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      if (data && data.data) {
+        return data.data
+      }
+      return []
+    } catch (err: any) {
+      console.error("Error fetching prescriptions:", err)
+      throw err
+    }
+  }
+
+  // Fetch medicines for a specific prescription
+  const fetchMedicinesForPrescription = async (prescriptionId: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/medicines/prescription/${prescriptionId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+      })
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          return []
+        }
+        throw new Error(`Failed to fetch medicines for prescription ${prescriptionId}: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      if (data && data.data) {
+        return data.data
+      }
+      return []
+    } catch (err: any) {
+      console.error(`Error fetching medicines for prescription ${prescriptionId}:`, err)
+      return []
+    }
+  }
+
+  // Process prescriptions and medicines to extract active medicines
+  const processActiveMedicines = (prescriptions: any[]) => {
+    const activeMeds: any[] = []
+    
+    // Filter for active prescriptions first
+    const activePrescriptions = prescriptions.filter(p => p.status === "active")
+    
+    // For each active prescription, get its medicines and filter for active ones
+    activePrescriptions.forEach(prescription => {
+      if (prescription.medicines && Array.isArray(prescription.medicines)) {
+        // If medicines are already included in the prescription response
+        const activeMedicinesInPrescription = prescription.medicines.filter((med: any) => med.status === "active")
+        activeMedicinesInPrescription.forEach((med: any) => {
+          activeMeds.push({
+            id: med.id,
+            medicine: `${med.name} ${med.dosage}`,
+            dosage: med.frequency ? `${med.frequency} (${med.instruction || 'as directed'})` : med.instruction || 'as directed',
+            remaining: med.duration ? parseInt(med.duration) : 0,
+            nextDose: "As prescribed",
+            adherence: 95,
+            prescriptionId: prescription.id,
+            doctor: prescription.doctor
+          })
+        })
+      }
+    })
+    
+    return activeMeds
+  }
+
+  // Fetch recent prescriptions (all, not just active)
+  const processRecentPrescriptions = (prescriptions: any[]) => {
+    // Sort by date (newest first)
+    const sortedPrescriptions = [...prescriptions].sort((a: any, b: any) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    )
+    
+    // Transform data to match our UI expectations
+    const transformedData = sortedPrescriptions.map((prescription: any) => ({
+      id: prescription.id,
+      doctor: prescription.doctor || "Unknown Doctor",
+      specialty: prescription.specialty || "General",
+      date: prescription.date || new Date().toISOString(),
+      medicines: prescription.medicines && Array.isArray(prescription.medicines) 
+        ? prescription.medicines.map((med: any) => `${med.name} ${med.dosage}`).join(", ")
+        : "No medicines listed",
+      status: prescription.status || "active",
+    }))
+    
+    // Return only the 3 most recent
+    return transformedData.slice(0, 3)
+  }
+
+  // Fetch all data for dashboard
+  const fetchDashboardData = async (userId: string) => {
+    try {
+      // Fetch user profile
+      await fetchUserProfile(userId)
+      
+      // Fetch all prescriptions
+      const prescriptions = await fetchAllPrescriptions(userId)
+      
+      // Process active medicines
+      const activeMeds = processActiveMedicines(prescriptions)
+      setActiveMedicines(activeMeds)
+      
+      // Process recent prescriptions
+      const recentPrescs = processRecentPrescriptions(prescriptions)
+      setRecentPrescriptions(recentPrescs)
+      
+    } catch (err: any) {
+      console.error("Error fetching dashboard data:", err)
+      setError(err.message || "Failed to load dashboard data")
+    }
+  }
+
+  // Logout function
+  const handleLogout = () => {
+    // Clear auth data from localStorage
+    localStorage.removeItem("medico_auth")
+    // Redirect to login page
+    router.push("/login")
+  }
+
+  // Confirm logout
   const confirmLogout = () => {
-    logout();
-    setShowLogoutModal(false);
-  };
+    handleLogout()
+    setShowLogoutModal(false)
+  }
+
+  // Fetch data on component mount
+  useEffect(() => {
+    const initializeDashboard = async () => {
+      setIsLoading(true)
+      setError(null)
+      
+      // Get auth data
+      const { userId, phone } = getAuthData()
+      
+      if (!userId || !phone) {
+        setError("Authentication required. Please log in.")
+        router.push("/login")
+        return
+      }
+      
+      setUserId(userId)
+      
+      try {
+        // Fetch all dashboard data
+        await fetchDashboardData(userId)
+      } catch (err: any) {
+        console.error("Error initializing dashboard:", err)
+        setError(err.message || "Failed to load dashboard data")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    initializeDashboard()
+  }, [])
+
+  // Show loading state
+  if (isLoading) {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Loading your dashboard...</p>
+          </div>
+        </div>
+      </AuthGuard>
+    )
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <AuthGuard>
+        <div className="min-h-screen bg-gradient-to-br from-background via-background/95 to-background/90 flex items-center justify-center">
+          <div className="text-center p-6 bg-destructive/10 text-destructive rounded-lg max-w-md">
+            <p className="mb-4">{error}</p>
+            <Button 
+              onClick={() => {
+                setIsLoading(true)
+                const { userId } = getAuthData()
+                if (userId) {
+                  fetchDashboardData(userId).finally(() => setIsLoading(false))
+                }
+              }} 
+              className="mt-4"
+            >
+              Retry
+            </Button>
+          </div>
+        </div>
+      </AuthGuard>
+    )
+  }
 
   return (
     <AuthGuard>
@@ -153,7 +331,7 @@ export default function DashboardPage() {
                         "0 0 0px rgba(255,255,255,0)",
                       ],
                     }}
-                    transition={{ duration: 2, repeat: Infinity }}
+                    transition={{ duration: 2, repeat: Number.POSITIVE_INFINITY }}
                     className="text-primary-foreground font-bold text-lg"
                   >
                     M
@@ -163,8 +341,8 @@ export default function DashboardPage() {
                 <motion.div
                   animate={{ rotate: 360, scale: [1, 1.1, 1] }}
                   transition={{
-                    rotate: { duration: 20, repeat: Infinity, ease: "linear" },
-                    scale: { duration: 2, repeat: Infinity, ease: "easeInOut" },
+                    rotate: { duration: 20, repeat: Number.POSITIVE_INFINITY, ease: "linear" },
+                    scale: { duration: 2, repeat: Number.POSITIVE_INFINITY, ease: "easeInOut" },
                   }}
                   className="absolute -inset-1 border border-primary/30 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
                 />
@@ -190,17 +368,13 @@ export default function DashboardPage() {
                     animate={{ scale: [1, 1.2, 1] }}
                     transition={{
                       duration: 2,
-                      repeat: Infinity,
+                      repeat: Number.POSITIVE_INFINITY,
                       ease: "easeInOut",
                     }}
                     className="w-2 h-2 bg-green-500 rounded-full shadow-sm shadow-green-500/50"
                   />
                   <p className="text-sm text-muted-foreground font-medium">
-                    Welcome,{" "}
-                    <span className="text-primary font-semibold">
-                      {profile?.name || "User"}
-                    </span>
-                    ! 👋
+                    Welcome, <span className="text-primary font-semibold">{userName}</span>! 👋
                   </p>
                 </motion.div>
               </div>
@@ -213,52 +387,24 @@ export default function DashboardPage() {
               transition={{ duration: 0.5, delay: 0.2 }}
               className="flex items-center space-x-3"
             >
-              {/* Notifications */}
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className="relative"
-              >
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-2xl bg-muted/30 border border-border/50 hover:bg-muted/50 transition-all duration-300"
-                >
-                  <Bell className="h-4 w-4 text-foreground" />
-                  {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-destructive text-destructive-foreground text-xs rounded-full flex items-center justify-center font-bold">
-                      {unreadCount}
-                    </span>
-                  )}
-                </Button>
-              </motion.div>
-
+             
               {/* Theme Toggle with enhanced styling */}
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <ThemeToggle className="rounded-2xl bg-muted/30 border border-border/50 hover:bg-muted/50 transition-all duration-300" />
               </motion.div>
 
               {/* Logout Button with enhanced styling and confirmation */}
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => {
-                    triggerHaptic();
-                    setShowLogoutModal(true);
+                    triggerHaptic()
+                    setShowLogoutModal(true)
                   }}
                   className="rounded-2xl bg-red-50/50 dark:bg-red-950/20 text-red-600 dark:text-red-400 hover:bg-red-100/80 dark:hover:bg-red-950/40 hover:text-red-700 dark:hover:text-red-300 border border-red-200/50 dark:border-red-800/30 transition-all duration-300 group"
                 >
-                  <motion.div
-                    whileHover={{ rotate: 15 }}
-                    transition={{ type: "spring", stiffness: 300 }}
-                  >
+                  <motion.div whileHover={{ rotate: 15 }} transition={{ type: "spring", stiffness: 300 }}>
                     <LogOut className="h-4 w-4 group-hover:scale-110 transition-transform duration-200" />
                   </motion.div>
                 </Button>
@@ -284,29 +430,25 @@ export default function DashboardPage() {
             transition={{ duration: 0.5, delay: 0.1 }}
           >
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-foreground">
-                Quick Actions
-              </h2>
+              <h2 className="text-xl font-bold text-foreground">Quick Actions</h2>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
               <Button
                 onClick={() => {
-                  triggerHaptic();
-                  router.push("/upload");
+                  triggerHaptic()
+                  router.push("/upload")
                 }}
                 className="h-20 md:h-24 rounded-3xl bg-primary/10 hover:bg-primary/20 text-primary border-2 border-primary/20 hover:border-primary/30 flex flex-col items-center justify-center space-y-2 transition-all duration-300"
                 variant="ghost"
               >
                 <Upload className="w-5 h-5 md:w-6 md:h-6" />
-                <span className="text-xs md:text-sm font-medium">
-                  Upload Rx
-                </span>
+                <span className="text-xs md:text-sm font-medium">Upload Rx</span>
               </Button>
 
               <Button
                 onClick={() => {
-                  triggerHaptic();
-                  router.push("/prescriptions");
+                  triggerHaptic()
+                  router.push("/prescriptions")
                 }}
                 className="h-20 md:h-24 rounded-3xl bg-secondary/50 hover:bg-secondary text-secondary-foreground border-2 border-secondary/20 hover:border-secondary/30 flex flex-col items-center justify-center space-y-2 transition-all duration-300"
                 variant="ghost"
@@ -317,8 +459,8 @@ export default function DashboardPage() {
 
               <Button
                 onClick={() => {
-                  triggerHaptic();
-                  router.push("/chat");
+                  triggerHaptic()
+                  router.push("/chat")
                 }}
                 className="h-20 md:h-24 rounded-3xl bg-secondary/50 hover:bg-secondary text-secondary-foreground border-2 border-secondary/20 hover:border-secondary/30 flex flex-col items-center justify-center space-y-2 transition-all duration-300"
                 variant="ghost"
@@ -329,8 +471,8 @@ export default function DashboardPage() {
 
               <Button
                 onClick={() => {
-                  triggerHaptic();
-                  router.push("/profile");
+                  triggerHaptic()
+                  router.push("/profile")
                 }}
                 className="h-20 md:h-24 rounded-3xl bg-primary/10 hover:bg-primary/20 text-primary border-2 border-primary/20 hover:border-primary/30 flex flex-col items-center justify-center space-y-2 transition-all duration-300"
                 variant="ghost"
@@ -356,14 +498,12 @@ export default function DashboardPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="max-h-80 overflow-y-auto space-y-3">
-                  {mockActivePrescriptions.length === 0 ? (
+                  {activeMedicines.length === 0 ? (
                     <div className="text-center py-8">
                       <div className="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Pill className="w-8 h-8 text-muted-foreground/50" />
                       </div>
-                      <h3 className="font-medium text-foreground mb-2">
-                        No Active Medications
-                      </h3>
+                      <h3 className="font-medium text-foreground mb-2">No Active Medications</h3>
                       <p className="text-sm text-muted-foreground mb-4">
                         You don't have any active prescriptions at the moment.
                       </p>
@@ -371,8 +511,8 @@ export default function DashboardPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => {
-                          triggerHaptic();
-                          router.push("/prescriptions");
+                          triggerHaptic()
+                          router.push("/prescriptions")
                         }}
                         className="rounded-xl"
                       >
@@ -381,27 +521,21 @@ export default function DashboardPage() {
                       </Button>
                     </div>
                   ) : (
-                    mockActivePrescriptions.map((prescription) => (
+                    activeMedicines.map((medicine) => (
                       <div
-                        key={prescription.id}
+                        key={medicine.id}
                         className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl hover:bg-muted/50 transition-colors duration-300"
                       >
                         <div className="flex-1">
-                          <h4 className="font-medium text-foreground">
-                            {prescription.medicine}
-                          </h4>
-                          <p className="text-sm text-muted-foreground">
-                            {prescription.dosage}
-                          </p>
+                          <h4 className="font-medium text-foreground">{medicine.medicine}</h4>
+                          <p className="text-sm text-muted-foreground">{medicine.dosage}</p>
                           <div className="flex items-center justify-between mt-2">
-                            <p className="text-xs text-muted-foreground">
-                              Next dose: {prescription.nextDose}
-                            </p>
+                            <p className="text-xs text-muted-foreground">Next dose: {medicine.nextDose}</p>
                           </div>
                         </div>
                         <div className="text-right ml-4">
                           <Badge variant="secondary" className="rounded-xl">
-                            {prescription.remaining} left
+                            {medicine.remaining} left
                           </Badge>
                         </div>
                       </div>
@@ -428,8 +562,8 @@ export default function DashboardPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        triggerHaptic();
-                        router.push("/prescriptions");
+                        triggerHaptic()
+                        router.push("/prescriptions")
                       }}
                       className="text-primary hover:text-primary/80 hover:bg-primary/10 rounded-xl flex items-center transition-all duration-300"
                     >
@@ -439,25 +573,22 @@ export default function DashboardPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {mockRecentPrescriptions.length === 0 ? (
+                  {recentPrescriptions.length === 0 ? (
                     <div className="text-center py-8">
                       <div className="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-4">
                         <FileText className="w-8 h-8 text-muted-foreground/50" />
                       </div>
-                      <h3 className="font-medium text-foreground mb-2">
-                        No Recent Prescriptions
-                      </h3>
+                      <h3 className="font-medium text-foreground mb-2">No Recent Prescriptions</h3>
                       <p className="text-sm text-muted-foreground mb-4">
-                        Your recent prescription history will appear here once
-                        you visit a doctor.
+                        Your recent prescription history will appear here once you visit a doctor.
                       </p>
                       <div className="flex gap-2 justify-center">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => {
-                            triggerHaptic();
-                            router.push("/prescriptions/upload");
+                            triggerHaptic()
+                            router.push("/prescriptions/upload")
                           }}
                           className="rounded-xl"
                         >
@@ -467,142 +598,31 @@ export default function DashboardPage() {
                       </div>
                     </div>
                   ) : (
-                    mockRecentPrescriptions.map((prescription) => (
+                    recentPrescriptions.map((prescription) => (
                       <div
                         key={prescription.id}
                         className="flex items-center justify-between p-4 bg-muted/30 rounded-2xl cursor-pointer hover:bg-muted/50 transition-colors duration-300"
                         onClick={() => {
-                          triggerHaptic();
-                          router.push(`/prescriptions/${prescription.id}`);
+                          triggerHaptic()
+                          router.push(`/prescriptions/${prescription.id}`)
                         }}
                       >
                         <div className="flex-1">
                           <div className="flex items-center space-x-2 mb-1">
-                            <h4 className="font-medium text-foreground">
-                              {prescription.doctor}
-                            </h4>
+                            <h4 className="font-medium text-foreground">{prescription.doctor}</h4>
                             <Badge
-                              variant={
-                                prescription.status === "active"
-                                  ? "default"
-                                  : "secondary"
-                              }
+                              variant={prescription.status === "active" ? "default" : "secondary"}
                               className="rounded-xl text-xs"
                             >
                               {prescription.status}
                             </Badge>
                           </div>
-                          <p className="text-sm text-muted-foreground">
-                            {prescription.specialty}
-                          </p>
+                          <p className="text-sm text-muted-foreground">{prescription.specialty}</p>
                           <p className="text-sm text-muted-foreground flex items-center mt-1">
                             <Calendar className="w-3 h-3 mr-1" />
                             {new Date(prescription.date).toLocaleDateString()}
                           </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {prescription.medicines.join(", ")}
-                          </p>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-
-            {/* Notifications */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.4 }}
-              className="lg:col-span-2"
-            >
-              <Card className="rounded-3xl border-2">
-                <CardHeader className="pb-4">
-                  <CardTitle className="flex items-center justify-between text-foreground">
-                    <div className="flex items-center">
-                      <div className="relative">
-                        <Clock className="w-5 h-5 mr-2 text-primary" />
-                        {unreadCount > 0 && (
-                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
-                        )}
-                      </div>
-                      Notifications
-                      {unreadCount > 0 && (
-                        <Badge
-                          variant="destructive"
-                          className="ml-2 rounded-full text-xs"
-                        >
-                          {unreadCount}
-                        </Badge>
-                      )}
-                    </div>
-                    {unreadCount > 0 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={markAllAsRead}
-                        className="text-primary hover:text-primary/80 hover:bg-primary/10 rounded-xl transition-all duration-300"
-                      >
-                        <CheckCircle2 className="w-4 h-4 mr-1" />
-                        Mark All Read
-                      </Button>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="max-h-80 overflow-y-auto space-y-3">
-                  {notifications.length === 0 ? (
-                    <div className="text-center py-8">
-                      <div className="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Clock className="w-8 h-8 text-muted-foreground/50" />
-                      </div>
-                      <h3 className="font-medium text-foreground mb-2">
-                        No Notifications
-                      </h3>
-                      <p className="text-sm text-muted-foreground mb-4">
-                        You're all caught up! Notifications about appointments,
-                        medications, and health updates will appear here.
-                      </p>
-                    </div>
-                  ) : (
-                    notifications.map((notification) => (
-                      <div
-                        key={notification.id}
-                        className={`p-4 rounded-2xl transition-colors duration-300 cursor-pointer ${
-                          notification.read
-                            ? "bg-muted/20 hover:bg-muted/30"
-                            : "bg-primary/10 border border-primary/20 hover:bg-primary/15"
-                        }`}
-                        onClick={() => {
-                          triggerHaptic();
-                          // Handle notification click - mark as read and navigate if needed
-                          if (!notification.read) {
-                            // Mark as read logic here
-                          }
-                        }}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <h4
-                              className={`font-medium ${
-                                notification.read
-                                  ? "text-muted-foreground"
-                                  : "text-foreground"
-                              }`}
-                            >
-                              {notification.title}
-                            </h4>
-                            <p className="text-sm text-muted-foreground mt-1">
-                              {notification.message}
-                            </p>
-                            <p className="text-xs text-muted-foreground mt-2 flex items-center">
-                              <Clock className="w-3 h-3 mr-1" />
-                              {notification.time}
-                            </p>
-                          </div>
-                          {!notification.read && (
-                            <div className="w-2 h-2 bg-primary rounded-full mt-2 flex-shrink-0" />
-                          )}
+                          <p className="text-xs text-muted-foreground mt-1">{prescription.medicines}</p>
                         </div>
                       </div>
                     ))
@@ -638,9 +658,7 @@ export default function DashboardPage() {
                     <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-2xl flex items-center justify-center">
                       <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
                     </div>
-                    <h3 className="text-lg font-semibold text-foreground">
-                      Confirm Logout
-                    </h3>
+                    <h3 className="text-lg font-semibold text-foreground">Confirm Logout</h3>
                   </div>
                   <Button
                     variant="ghost"
@@ -655,8 +673,8 @@ export default function DashboardPage() {
                 {/* Content */}
                 <div className="mb-6">
                   <p className="text-muted-foreground text-sm leading-relaxed">
-                    Are you sure you want to logout? You'll need to sign in
-                    again to access your medical records and prescriptions.
+                    Are you sure you want to logout? You'll need to sign in again to access your medical records and
+                    prescriptions.
                   </p>
                 </div>
 
@@ -683,5 +701,5 @@ export default function DashboardPage() {
         </AnimatePresence>
       </div>
     </AuthGuard>
-  );
+  )
 }

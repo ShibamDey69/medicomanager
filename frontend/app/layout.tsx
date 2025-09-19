@@ -15,7 +15,8 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "MedicoManager - Smart Medical Management",
   description:
-    "Smarter, Safer Medical Management with AI-powered prescription tracking"
+    "Smarter, Safer Medical Management with AI-powered prescription tracking",
+  icons: "/favicon.svg",
 };
 
 export default function RootLayout({
