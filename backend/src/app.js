@@ -17,12 +17,17 @@ import aichatRoutes from "./routes/aichat.routes.js";
 const app = express();
 
 app.use(helmet());
+console.log(process.env.FRONTEND_URL);
 app.use(
   cors({
-    origin: [process.env.FRONTEND_URL || "http://localhost:3000"],
+    origin:  [process.env.FRONTEND_URL || "http://localhost:3000"],
     credentials: true,
   })
 );
+app.use((req, res, next) => {
+  res.setHeader('Referrer-Policy', 'no-referrer-when-downgrade');
+  next();
+});
 app.use(xss());
 app.use(hpp());
 app.use(compression());
