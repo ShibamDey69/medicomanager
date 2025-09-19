@@ -3,6 +3,7 @@ import { HTTP_ERROR_CODES } from "../constants/index.js";
 import Response from "../handlers/responseHandler.js";
 
 const authenticate = async (req, res, next) => {
+  try {
   const token = req.cookies?.auth_token;
 
   if (!token) {
@@ -29,6 +30,14 @@ const authenticate = async (req, res, next) => {
   };
 
   next();
+  } catch (error) {
+    console.error("Authentication Error:", error);
+    return new Response(
+      res,
+      HTTP_ERROR_CODES.INTERNAL_SERVER_ERROR,
+      "Internal server error during authentication"
+    );
+  }
 };
 
 export default authenticate;

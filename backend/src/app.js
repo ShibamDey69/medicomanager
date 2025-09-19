@@ -17,7 +17,7 @@ import aichatRoutes from "./routes/aichat.routes.js";
 const app = express();
 
 app.use(helmet());
-console.log(process.env.FRONTEND_URL);
+app.set('trust proxy', 1); 
 app.use(
   cors({
     origin:  [process.env.FRONTEND_URL || "http://localhost:3000"],
