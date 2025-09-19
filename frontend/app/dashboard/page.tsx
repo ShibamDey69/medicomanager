@@ -588,7 +588,7 @@ export default function DashboardPage() {
                           size="sm"
                           onClick={() => {
                             triggerHaptic()
-                            router.push("/prescriptions/upload")
+                            router.push("/upload")
                           }}
                           className="rounded-xl"
                         >
