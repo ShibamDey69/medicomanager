@@ -8,6 +8,8 @@ COPY package*.json ./
 
 RUN npm install
 
+RUN npm install cookie-parser
+
 COPY . .
 
 EXPOSE 3000
