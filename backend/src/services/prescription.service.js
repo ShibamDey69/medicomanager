@@ -62,21 +62,57 @@ export async function getPrescriptionById(id) {
   }
 }
 
-export async function updatePrescription(id, data) {
+export async function updatePrescription(id, inputData) {
   try {
+    const {
+      id: _,
+      createdAt,
+      userId,
+      medicines,
+      ...otherData
+    } = inputData;
+
+    const medicineUpdates = medicines?.map((medicine) => ({
+      where: { id: medicine.id },
+      data: {
+        name: medicine.name,
+        dosage: medicine.dosage,
+        frequency: medicine.frequency,
+        duration: medicine.duration,
+        instruction: medicine.instruction,
+        status: medicine.status
+      }
+    })) || [];
+
+    const updateData = {
+      ...otherData,
+      ...(userId && {
+        user: { connect: { id: userId } }
+      }),
+      ...(medicineUpdates.length > 0 && {
+        medicines: { update: medicineUpdates }
+      })
+    };
+
     const updated = await prisma.prescription.update({
       where: { id },
-      data,
+      data: updateData,
       include: { medicines: true },
     });
 
-    await redis.del(`prescription:${id}`);
-    await redis.del(`user:${updated.userId}:prescriptions`);
+    await Promise.all([
+      redis.del(`prescription:${id}`),
+      redis.del(`user:${updated.userId}:prescriptions`)
+    ]);
+
     return updated;
   } catch (err) {
+    console.error("Error updating prescription:", err);
     throw new Error("Failed to update prescription: " + err.message);
   }
 }
+
+
 
 export async function deletePrescription(id) {
   try {
