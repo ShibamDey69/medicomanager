@@ -89,6 +89,7 @@ class Prescription {
 
       return new Response(res, SUCCESS_CODES.OK, updated);
     } catch (error) {
+      console.log("lole", error);
       return new Response(
         res,
         HTTP_ERROR_CODES.INTERNAL_SERVER_ERROR,
